@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="keywords" content="Hexo Theme Redefine">
+    
+    <meta name="author" content="Solmar">
+    
+    <!-- Completely eliminate flash of wrong theme -->
+    <script>
+        (function() {
+            const THEME_KEY = "REDEFINE-THEME-STATUS";
+            const DARK = "dark", LIGHT = "light";
+            
+            // Get preferred theme
+            function getTheme() {
+                try {
+                    const saved = localStorage.getItem(THEME_KEY);
+                    if (saved) {
+                        const { isDark } = JSON.parse(saved);
+                        return isDark ? DARK : LIGHT;
+                    }
+                } catch (e) {}
+                
+                return matchMedia("(prefers-color-scheme: dark)").matches ? DARK : LIGHT;
+            }
+            
+            // Apply theme to document
+            function applyTheme(theme) {
+                const isDark = theme === DARK;
+                const root = document.documentElement;
+                
+                // Set data attribute for CSS variables
+                root.setAttribute("data-theme", theme);
+                
+                // Set classes for compatibility
+                root.classList.add(theme);
+                root.classList.remove(isDark ? LIGHT : DARK);
+                root.style.colorScheme = theme;
+            }
+            
+            // Initial application
+            const theme = getTheme();
+            applyTheme(theme);
+            
+            // Listen for system preference changes
+            matchMedia("(prefers-color-scheme: dark)").addEventListener("change", ({ matches }) => {
+                // Only update if using system preference (no localStorage entry)
+                if (!localStorage.getItem(THEME_KEY)) {
+                    applyTheme(matches ? DARK : LIGHT);
+                }
+            });
+            
+            // Set body classes once DOM is ready
+            if (document.readyState !== "loading") {
+                document.body.classList.add(theme + "-mode");
+            } else {
+                document.addEventListener("DOMContentLoaded", () => {
+                    document.body.classList.add(theme + "-mode");
+                    document.body.classList.remove((theme === DARK ? LIGHT : DARK) + "-mode");
+                });
+            }
+        })();
+    </script>
+    
+    <!-- Critical CSS to prevent flash -->
+    <style>
+        :root[data-theme="dark"] {
+            --background-color: #202124;
+            --background-color-transparent: rgba(32, 33, 36, 0.6);
+            --second-background-color: #2d2e32;
+            --third-background-color: #34353a;
+            --third-background-color-transparent: rgba(32, 33, 36, 0.6);
+            --primary-color: #0066CC;
+            --first-text-color: #ffffff;
+            --second-text-color: #eeeeee;
+            --third-text-color: #bebec6;
+            --fourth-text-color: #999999;
+            --default-text-color: #bebec6;
+            --invert-text-color: #373D3F;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --selection-color: #0066CC;
+            --shadow-color-1: rgba(255, 255, 255, 0.08);
+            --shadow-color-2: rgba(255, 255, 255, 0.05);
+        }
+        
+        :root[data-theme="light"] {
+            --background-color: #fff;
+            --background-color-transparent: rgba(255, 255, 255, 0.6);
+            --second-background-color: #f8f8f8;
+            --third-background-color: #f2f2f2;
+            --third-background-color-transparent: rgba(241, 241, 241, 0.6);
+            --primary-color: #0066CC;
+            --first-text-color: #16171a;
+            --second-text-color: #2f3037;
+            --third-text-color: #5e5e5e;
+            --fourth-text-color: #eeeeee;
+            --default-text-color: #373D3F;
+            --invert-text-color: #bebec6;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --selection-color: #0066CC;
+            --shadow-color-1: rgba(0, 0, 0, 0.08);
+            --shadow-color-2: rgba(0, 0, 0, 0.05);
+        }
+        
+        body {
+            background-color: var(--background-color);
+            color: var(--default-text-color);
+        }
+        
+        /* Apply body classes as soon as DOM is ready */
+        :root[data-theme="dark"] body {
+            background-color: var(--background-color);
+            color: var(--default-text-color);
+        }
+    </style>
+    
+    <!-- preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    
+        
+        
+        
+            <link rel="preconnect" href="https://evan.beee.top" crossorigin>
+        
+    
+    <!--- Seo Part-->
+    
+    <link rel="canonical" href="http://example.com/shuoshuo/"/>
+    <meta name="robots" content="index,follow">
+    <meta name="googlebot" content="index,follow">
+    <meta name="revisit-after" content="1 days">
+    
+    
+    
+        
+        <meta name="description" content="Hexo Theme Redefine, Redefine Your Hexo Journey.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="shuoshuo">
+<meta property="og:url" content="http://example.com/shuoshuo/index.html">
+<meta property="og:site_name" content="Hexo">
+<meta property="og:description" content="Hexo Theme Redefine, Redefine Your Hexo Journey.">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/redefine-og.webp">
+<meta property="article:published_time" content="2025-07-01T04:00:00.000Z">
+<meta property="article:modified_time" content="2025-07-26T04:01:34.238Z">
+<meta property="article:author" content="John Doe">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/redefine-og.webp">
+    
+    
+    <!--- Icon Part-->
+    <link rel="icon" type="image/png" href="/images/emoji-62d0f621a2665d223fc7199b.svg" sizes="192x192">
+    <link rel="apple-touch-icon" sizes="180x180" href="/images/emoji-62d0f621a2665d223fc7199b.svg">
+    <meta name="theme-color" content="#808080">
+    <link rel="shortcut icon" href="/images/emoji-62d0f621a2665d223fc7199b.svg">
+    <!--- Page Info-->
+    
+    <title>
+        
+            Shuoshuo | Silent_tide
+        
+    </title>
+
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fonts/Chillax/chillax.css">
+
+    <!--- Inject Part-->
+    
+
+    
+<link rel="stylesheet" href="/css/style.css">
+
+
+    
+        <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/css/build/tailwind.css">
+    
+
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fonts/GeistMono/geist-mono.css">
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fonts/Geist/geist.css">
+    <!--- Font Part-->
+    
+    
+    
+    
+    
+    
+        <script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/anime.min.js" ></script>
+    
+
+    <script id="hexo-configurations">
+    window.config = {"hostname":"example.com","root":"/","language":"en","path":"search.json"};
+    window.theme = {"articles":{"style":{"font_size":"16px","line_height":1.5,"image_border_radius":"14px","image_alignment":"center","image_caption":false,"link_icon":true,"delete_mask":false,"title_alignment":"left","headings_top_spacing":{"h1":"3.2rem","h2":"2.4rem","h3":"1.9rem","h4":"1.6rem","h5":"1.4rem","h6":"1.3rem"}},"word_count":{"enable":true,"count":true,"min2read":true},"author_label":{"enable":true,"auto":false,"list":[]},"code_block":{"copy":true,"style":"mac","highlight_theme":{"light":"github","dark":"vs2015"},"font":{"enable":false,"family":null,"url":null}},"toc":{"enable":true,"max_depth":3,"number":false,"expand":true,"init_open":true},"copyright":{"enable":true,"default":"cc_by_nc_sa"},"lazyload":true,"pangu_js":false,"recommendation":{"enable":false,"title":"推荐阅读","limit":3,"mobile_limit":2,"placeholder":"/images/wallhaven-wqery6-light.webp","skip_dirs":[]}},"colors":{"primary":"#808080","secondary":null,"default_mode":"light"},"global":{"fonts":{"chinese":{"enable":false,"family":null,"url":null},"english":{"enable":false,"family":null,"url":null},"title":{"enable":false,"family":null,"url":null}},"content_max_width":"1000px","sidebar_width":"210px","hover":{"shadow":true,"scale":false},"scroll_progress":{"bar":false,"percentage":true},"website_counter":{"url":"https://cn.vercount.one/js","enable":true,"site_pv":true,"site_uv":true,"post_pv":true},"single_page":true,"preloader":{"enable":true,"custom_message":"沉默潮声"},"side_tools":{"gear_rotation":true,"auto_expand":false},"open_graph":{"enable":true,"image":"/images/redefine-og.webp","description":"Hexo Theme Redefine, Redefine Your Hexo Journey."},"google_analytics":{"enable":false,"id":null}},"home_banner":{"enable":true,"style":"fixed","image":{"light":"/images/wallhaven-85yl61.png","dark":"/images/wallhaven-o32pj9.png"},"title":"沉默潮声","subtitle":{"text":["我爱我自己这一团凝结的、坚实的思想。这是我生命的支点。"],"hitokoto":{"enable":false,"show_author":false,"api":"https://v1.hitokoto.cn"},"typing_speed":100,"backing_speed":80,"starting_delay":500,"backing_delay":1500,"loop":false,"smart_backspace":false},"text_color":{"light":"#fff","dark":"#d1d1b6"},"text_style":{"title_size":"2.8rem","subtitle_size":"1.5rem","line_height":1.2},"custom_font":{"enable":false,"family":null,"url":null},"social_links":{"enable":false,"style":"default","links":{"github":null,"instagram":null,"zhihu":null,"twitter":null,"email":null},"qrs":{"weixin":null}}},"plugins":{"feed":{"enable":false},"aplayer":{"enable":true,"type":"fixed","audios":[{"name":"Seasons","artist":"Sam Austins","url":"/songs/Sam Austins - Seasons.mp3","cover":"/songs/Seasons.png","lrc":null},{"name":"Self Control","artist":"Frank Ocean /Eduard Vodovozik","url":"/songs/Frank Ocean - Self Control.mp3","cover":"/songs/Self Control.png"},{"name":"Acura Integurl","artist":"Frank Ocean","url":"/songs/Frank Ocean - Acura Integurl.mp3","cover":"/songs/Acura Integurl.png"},{"name":"Hello Mr.Peng (混音人声)","artist":"LV","url":"/songs/@LV - Hello Mr.Peng (混音人声)_kgg-dec.mp3","cover":"/songs/Hello Mr.Peng.png"},{"name":"Beanie","artist":"Chezile","url":"/songs/Chezile - Beanie_kgg-dec.mp3","cover":"/songs/Beanie.png"},{"name":"Miqing (PHONK)","artist":"FLYSBR","url":"/songs/FLYSBR - Miqing (PHONK)_kgg-dec.mp3","cover":"/songs/Miqing (PHONK).png"},{"name":"i want","artist":"Newweis","url":"/songs/Newweis - i want.mp3","cover":"/songs/i want.png"},{"name":"The Truth That You Leave (你离开的事实)","artist":"Pianoboy高至豪","url":"/songs/Pianoboy高至豪 - The Truth That You Leave (你离开的事实).mp3","cover":"/songs/The Truth That You Leave (你离开的事实).png"},{"name":"YOSEMITE (Explicit)","artist":"Travis Scott","url":"/songs/Travis Scott - YOSEMITE (Explicit)_kgg-dec.mp3","cover":"/songs/YOSEMITE (Explicit).png"},{"name":"painting","artist":"Tsuki","url":"/songs/Tsuki - painting_kgg-dec.mp3","cover":"/songs/painting.png"},{"name":"rainy day","artist":"Tsuki","url":"/songs/Tsuki - rainy day_kgg-dec.mp3","cover":"/songs/rainy day.png"},{"name":"Leisure Time","artist":"TypeD","url":"/songs/TypeD - Leisure Time_kgg-dec.mp3","cover":"/songs/Leisure Time.png"},{"name":"零距离的思念","artist":"vine","url":"/songs/vine - 零距离的思念.mp3","cover":"/songs/零距离的思念.png"},{"name":"Bound 2 (Explicit)","artist":"Ye","url":"/songs/Ye - Bound 2 (Explicit).mp3","cover":"/songs/Bound 2 (Explicit).png"},{"name":"春娇与志明 (慢速版)","artist":"街道办GDC、欧阳耀莹","url":"/songs/街道办GDC、欧阳耀莹 - 春娇与志明 (慢速版).mp3","cover":"/songs/春娇与志明 (慢速版).png"},{"name":"Улетали птицами гордыми (Remix)","artist":"林怿","url":"/songs/林怿 - Улетали птицами гордыми (Remix)_kgg-dec.mp3","cover":"/songs/Улетали птицами гордыми (Remix).png"}]},"mermaid":{"enable":false,"version":"11.4.1"}},"version":"2.8.5","navbar":{"auto_hide":false,"color":{"left":"#000","right":"#FFF","transparency":30},"width":{"home":"1200px","pages":"1000px"},"links":{"Home":{"path":"/","icon":"fa-regular fa-house"},"Archives":{"path":"/archives","icon":"fa-regular fa-archive"},"Resource":{"icon":"fa-solid fa-bookmark","path":"/bookmarks/"},"shuoshuo":{"icon":"fa-solid fa-comment","path":"/shuoshuo/"},"About":{"icon":"fa-regular fa-user","submenus":{"Me":"/About_Me","Github":"https://github.com/chenmochaos"}}},"search":{"enable":true,"preload":true}},"page_templates":{"friends_column":2,"tags_style":"blur","bookmarks_column":3},"home":{"sidebar":{"enable":true,"position":"left","first_item":"menu","announcement":"Everything you wanna know from me.","show_on_mobile":true,"links":{"Archives":{"path":"/archives","icon":"fa-regular fa-archive"},"Tags":{"path":"/tags","icon":"fa-regular fa-tags"},"Categories":{"path":"/categories","icon":"fa-regular fa-folder"}}},"article_date_format":"auto","excerpt_length":200,"categories":{"enable":true,"limit":3},"tags":{"enable":true,"limit":3}},"footerStart":"2025/7/10 12:00:00"};
+    window.lang_ago = {"second":"%s seconds ago","minute":"%s minutes ago","hour":"%s hours ago","day":"%s days ago","week":"%s weeks ago","month":"%s months ago","year":"%s years ago"};
+    window.data = {"masonry":false};
+  </script>
+    
+    <!--- Fontawesome Part-->
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fontawesome/fontawesome.min.css">
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fontawesome/brands.min.css">
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fontawesome/solid.min.css">
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/fontawesome/regular.min.css">
+    
+    
+    
+    
+<meta name="generator" content="Hexo 7.3.0"></head>
+
+
+
+<body>
+	<div class="progress-bar-container">
+	
+
+	
+	<span class="pjax-progress-bar"></span>
+	<!--        <span class="swup-progress-icon">-->
+	<!--            <i class="fa-solid fa-circle-notch fa-spin"></i>-->
+	<!--        </span>-->
+	
+</div>
+
+<style>
+    :root {
+        --preloader-background-color: #fff;
+        --preloader-text-color: #000;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --preloader-background-color: #202124;
+            --preloader-text-color: #fff;
+        }
+    }
+
+    @media (prefers-color-scheme: light) {
+        :root {
+            --preloader-background-color: #fff;
+            --preloader-text-color: #000;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .ml13 {
+            font-size: 2.6rem !important; /* Adjust this value as needed */
+        }
+    }
+
+    .preloader {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem; /* Tailwind 'gap-4' is 1rem */
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        padding: 12px;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh; /* 'h-screen' is 100% of the viewport height */
+        background-color: var(--preloader-background-color);
+        z-index: 1100; /* 'z-[1100]' sets the z-index */
+        transition: opacity 0.2s ease-in-out;
+    }
+
+    .ml13 {
+        font-size: 3.2rem;
+        /* text-transform: uppercase; */
+        color: var(--preloader-text-color);
+        letter-spacing: -1px;
+        font-weight: 500;
+        font-family: 'Chillax-Variable', sans-serif;
+        text-align: center;
+    }
+
+    .ml13 .word {
+        display: inline-flex;
+        flex-wrap: wrap;
+        white-space: nowrap;
+    }
+
+    .ml13 .letter {
+        display: inline-block;
+        line-height: 1em;
+    }
+</style>
+
+<div class="preloader">
+    <h2 class="ml13">
+        沉默潮声
+    </h2>
+    <script>
+        var textWrapper = document.querySelector('.ml13');
+        // Split text into words
+        var words = textWrapper.textContent.trim().split(' ');
+
+        // Clear the existing content
+        textWrapper.innerHTML = '';
+
+        // Wrap each word and its letters in spans
+        words.forEach(function(word) {
+            var wordSpan = document.createElement('span');
+            wordSpan.classList.add('word');
+            wordSpan.innerHTML = word.replace(/\S/g, "<span class='letter'>$&</span>");
+            textWrapper.appendChild(wordSpan);
+            textWrapper.appendChild(document.createTextNode(' ')); // Add space between words
+        });
+
+        var animation = anime.timeline({ loop: true })
+            .add({
+                targets: '.ml13 .letter',
+                translateY: [20, 0],
+                translateZ: 0,
+                opacity: [0, 1],
+                filter: ['blur(5px)', 'blur(0px)'],
+                easing: "easeOutExpo",
+                duration: 1200,
+                delay: (el, i) => 300 + 20 * i,
+            })
+            .add({
+                targets: '.ml13 .letter',
+                translateY: [0, -20],
+                opacity: [1, 0],
+                filter: ['blur(0px)', 'blur(5px)'],
+                easing: "easeInExpo",
+                duration: 1000,
+                delay: (el, i) => 15 * i,
+                complete: function() {
+                    hidePreloader();
+                }
+            }, '-=700');
+
+
+        let themeStatus = JSON.parse(localStorage.getItem('REDEFINE-THEME-STATUS'))?.isDark;
+
+        // If the theme status is not found in local storage, check the preferred color scheme
+        if (themeStatus === undefined || themeStatus === null) {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                themeStatus = 'dark';
+            } else {
+                themeStatus = 'light';
+            }
+        }
+
+        // Now you can use the themeStatus variable in your code
+        if (themeStatus) {
+            document.documentElement.style.setProperty('--preloader-background-color', '#202124');
+            document.documentElement.style.setProperty('--preloader-text-color', '#fff');
+        } else {
+            document.documentElement.style.setProperty('--preloader-background-color', '#fff');
+            document.documentElement.style.setProperty('--preloader-text-color', '#000');
+        }
+
+        window.addEventListener('load', function () {
+            setTimeout(hidePreloader, 5000); // Call hidePreloader after 5000 milliseconds if not already called by animation
+        });
+
+        function hidePreloader() {
+            var preloader = document.querySelector('.preloader');
+            preloader.style.opacity = '0';
+            setTimeout(function () {
+                preloader.style.display = 'none';
+            }, 200);
+        }
+    </script>
+</div>
+
+<main class="page-container" id="swup">
+
+	
+
+	<div class="main-content-container flex flex-col justify-between min-h-dvh">
+		<div class="main-content-header">
+			<header class="navbar-container px-6 md:px-12">
+    <div class="navbar-content transition-navbar ">
+        <div class="left">
+            
+                <a class="logo-image h-8 w-8 sm:w-10 sm:h-10 mr-3" href="/">
+                    <img src="/images/emoji-62d0f621a2665d223fc7199b.svg" class="w-full h-full rounded-xs">
+                </a>
+            
+            <a class="logo-title" href="/">
+                
+                Silent_tide
+                
+            </a>
+        </div>
+
+        <div class="right">
+            <!-- PC -->
+            <div class="desktop">
+                <ul class="navbar-list">
+                    
+                        
+                            
+
+                            <li class="navbar-item">
+                                <!-- Menu -->
+                                <a class=""
+                                   href="/"
+                                        >
+                                    <i class="fa-regular fa-house fa-fw"></i>
+                                    HOME
+                                    
+                                </a>
+
+                                <!-- Submenu -->
+                                
+                            </li>
+                    
+                        
+                            
+
+                            <li class="navbar-item">
+                                <!-- Menu -->
+                                <a class=""
+                                   href="/archives"
+                                        >
+                                    <i class="fa-regular fa-archive fa-fw"></i>
+                                    ARCHIVES
+                                    
+                                </a>
+
+                                <!-- Submenu -->
+                                
+                            </li>
+                    
+                        
+                            
+
+                            <li class="navbar-item">
+                                <!-- Menu -->
+                                <a class=""
+                                   href="/bookmarks/"
+                                        >
+                                    <i class="fa-solid fa-bookmark fa-fw"></i>
+                                    RESOURCE
+                                    
+                                </a>
+
+                                <!-- Submenu -->
+                                
+                            </li>
+                    
+                        
+                            
+
+                            <li class="navbar-item">
+                                <!-- Menu -->
+                                <a class="active"
+                                   href="/shuoshuo/"
+                                        >
+                                    <i class="fa-solid fa-comment fa-fw"></i>
+                                    SHUOSHUO
+                                    
+                                </a>
+
+                                <!-- Submenu -->
+                                
+                            </li>
+                    
+                        
+                            
+
+                            <li class="navbar-item">
+                                <!-- Menu -->
+                                <a class="has-dropdown"
+                                   href="#"
+                                        onClick=&#34;return false;&#34;>
+                                    <i class="fa-regular fa-user fa-fw"></i>
+                                    ABOUT
+                                    <i class="fa-solid fa-chevron-down fa-fw"></i>
+                                </a>
+
+                                <!-- Submenu -->
+                                
+                                    <ul class="sub-menu">
+                                        
+                                            <li>
+                                                <a href="/About_Me">
+                                                    ME
+                                                </a>
+                                            </li>
+                                        
+                                            <li>
+                                                <a target="_blank" rel="noopener" href="https://github.com/chenmochaos">
+                                                    GITHUB
+                                                </a>
+                                            </li>
+                                        
+                                    </ul>
+                                
+                            </li>
+                    
+                    
+                        <li class="navbar-item search search-popup-trigger">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </li>
+                    
+                </ul>
+            </div>
+            <!-- Mobile -->
+            <div class="mobile">
+                
+                    <div class="icon-item search search-popup-trigger"><i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                
+                <div class="icon-item navbar-bar">
+                    <div class="navbar-bar-middle"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile sheet -->
+    <div class="navbar-drawer h-dvh w-full absolute top-0 left-0 bg-background-color flex flex-col justify-between">
+        <ul class="drawer-navbar-list flex flex-col px-4 justify-center items-start">
+            
+                
+                    
+
+                    <li class="drawer-navbar-item text-base my-1.5 flex flex-col w-full">
+                        
+                        <a class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary text-2xl font-semibold group border-b border-border-color hover:border-primary w-full "
+                           href="/"
+                        >
+                            <span>
+                                HOME
+                            </span>
+                            
+                                <i class="fa-regular fa-house fa-sm fa-fw"></i>
+                            
+                        </a>
+                        
+
+                        
+                    </li>
+            
+                
+                    
+
+                    <li class="drawer-navbar-item text-base my-1.5 flex flex-col w-full">
+                        
+                        <a class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary text-2xl font-semibold group border-b border-border-color hover:border-primary w-full "
+                           href="/archives"
+                        >
+                            <span>
+                                ARCHIVES
+                            </span>
+                            
+                                <i class="fa-regular fa-archive fa-sm fa-fw"></i>
+                            
+                        </a>
+                        
+
+                        
+                    </li>
+            
+                
+                    
+
+                    <li class="drawer-navbar-item text-base my-1.5 flex flex-col w-full">
+                        
+                        <a class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary text-2xl font-semibold group border-b border-border-color hover:border-primary w-full "
+                           href="/bookmarks/"
+                        >
+                            <span>
+                                RESOURCE
+                            </span>
+                            
+                                <i class="fa-solid fa-bookmark fa-sm fa-fw"></i>
+                            
+                        </a>
+                        
+
+                        
+                    </li>
+            
+                
+                    
+
+                    <li class="drawer-navbar-item text-base my-1.5 flex flex-col w-full">
+                        
+                        <a class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary text-2xl font-semibold group border-b border-border-color hover:border-primary w-full active"
+                           href="/shuoshuo/"
+                        >
+                            <span>
+                                SHUOSHUO
+                            </span>
+                            
+                                <i class="fa-solid fa-comment fa-sm fa-fw"></i>
+                            
+                        </a>
+                        
+
+                        
+                    </li>
+            
+                
+                    
+
+                    <li class="drawer-navbar-item-sub text-base my-1.5 flex flex-col w-full">
+                        
+                        <div class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary cursor-pointer text-2xl font-semibold group border-b border-border-color hover:border-primary w-full "
+                             navbar-data-toggle="submenu-About"
+                        >
+                            <span>
+                                ABOUT
+                            </span>
+                            
+                                <i class="fa-solid fa-chevron-right fa-sm fa-fw transition-all"></i>
+                            
+                        </div>
+                        
+
+                        
+                            <div class="flex-col items-start px-2 py-2 hidden" data-target="submenu-About">
+                                
+                                    <div class="drawer-navbar-item text-base flex flex-col justify-center items-start hover:underline active:underline hover:underline-offset-1 rounded-3xl">
+                                        <a class=" text-third-text-color text-xl"
+                                           href="/About_Me">ME</a>
+                                    </div>
+                                
+                                    <div class="drawer-navbar-item text-base flex flex-col justify-center items-start hover:underline active:underline hover:underline-offset-1 rounded-3xl">
+                                        <a class=" text-third-text-color text-xl"
+                                           target="_blank" rel="noopener" href="https://github.com/chenmochaos">GITHUB</a>
+                                    </div>
+                                
+                            </div>
+                        
+                    </li>
+            
+
+            
+            
+                
+                    
+                    
+                    <li class="drawer-navbar-item text-base my-1.5 flex flex-col w-full">
+                        <a class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary text-2xl font-semibold group border-b border-border-color hover:border-primary w-full active"
+                           href="/tags"
+                        >
+                            <span>Tags</span>
+                            <i class="fa-regular fa-tags fa-sm fa-fw"></i>
+                        </a>
+                    </li>
+                
+                    
+                    <li class="drawer-navbar-item text-base my-1.5 flex flex-col w-full">
+                        <a class="py-1.5 px-2 flex flex-row items-center justify-between gap-1 hover:!text-primary active:!text-primary text-2xl font-semibold group border-b border-border-color hover:border-primary w-full active"
+                           href="/categories"
+                        >
+                            <span>Categories</span>
+                            <i class="fa-regular fa-folder fa-sm fa-fw"></i>
+                        </a>
+                    </li>
+                
+            
+        </ul>
+
+        <div class="statistics flex justify-around my-2.5">
+    <a class="item tag-count-item flex flex-col justify-center items-center w-20" href="/tags">
+        <div class="number text-2xl sm:text-xl text-second-text-color font-semibold">1</div>
+        <div class="label text-third-text-color text-sm">Tags</div>
+    </a>
+    <a class="item tag-count-item flex flex-col justify-center items-center w-20" href="/categories">
+        <div class="number text-2xl sm:text-xl text-second-text-color font-semibold">1</div>
+        <div class="label text-third-text-color text-sm">Categories</div>
+    </a>
+    <a class="item tag-count-item flex flex-col justify-center items-center w-20" href="/archives">
+        <div class="number text-2xl sm:text-xl text-second-text-color font-semibold">2</div>
+        <div class="label text-third-text-color text-sm">Posts</div>
+    </a>
+</div>
+    </div>
+
+    <div class="window-mask"></div>
+
+</header>
+
+
+		</div>
+
+		<div class="main-content-body transition-fade-up">
+			
+
+			<div class="main-content">
+				<div class="page-template-container">
+	
+
+	
+	<div class="mb-4">
+	<h1 class="page-title-header">shuoshuo</h1>
+	<ul class="flex flex-col mb-4 gap-6">
+		
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-26T03:19:08+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>当我发现自己因为别人而不可抑制产生情绪的时候，我觉得我可能要坠入爱河了</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-21T23:28:25+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>刚刚做了一个梦，突然被惊醒。<br>一直到现在，我依旧觉得河南乃至中国的教育都是一场寒冰。梦里冰天雪地，为了上学不冷，我裹了一个棉袄，又套了一层校服冲锋衣。回到家里，妈妈为了让我有衣服上学穿，晚上熬夜赶紧把衣服洗出来，不然第二天衣服不干，穿不了，上学就会迟到。毕竟周末只能回家半天。<br>不禁让我想起高三因为早操迟到了不到十秒钟被班主任罚回家走读一天的夜晚。十点多晚自习结束离校，到家之后必须倒头就睡，不然第二天起不来，五点多是到不了校的。虽然第二天是学校一年组织一次的郊游活动，六点多才集合，但从家里到学校，骑共享电车要将近五十分钟。所以两个人四点多就起来了。<br>回头想想那段日子，简直是彻头彻尾的苦，前一段时间怀念高中的朋友和纯粹的感情，没有这么认为。今天突然梦里惊醒了，我意识到，过去那段早上五点半查迟到、被应试教育压的一口气都喘不过来的日子彻底地过去了，而这一段时光就是我人生中的寒冰。<br>如果我未来有孩子，我一定会先确保自己有让孩子不卷应试教育的能力，也不会让他待在河南受教育。但这不意味着我不爱这片土地，去外省上大学，我会很自豪地说我是河南的孩子。但这片教育的土地太苦了，苦到我觉得996和高中受教育时所受的苦难都没办法相比。<br>中国的教育就像一口不深不浅的水，普通家庭都被按在水里，喘不上气、也淹不死。<br>教育教育，偏偏是教育，哪里都好，偏偏是教育。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-16T06:33:31+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>感谢十人寝的时光，在我没遇到十人寝各种脏乱差、外卖吃完不扔、垃圾不倒、物品全部乱摆之前，我从来没觉得卫生和生活习惯会是问题。<br>想到这里想向我妈妈道歉，感谢十几年的容忍。<br>回到家之后我开始因为我父亲的生活习惯而烦躁，希望能慢慢把他改过来。<br>所以未来找伴侣一定一定要找和自己生活方式相似的。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-16T05:16:41+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>今天刷到了一个抖音说忠诚在当下日益缺失，我前几天还想过这个问题。<br>我个人更倾向于成为辅佐别人的角色，如果真的要忠诚于别人，我会选择刘智杰。不知道为什么会突然想到他身上，但是就偏偏对这种从不张扬如野草蛮生般的决心有种不可遏制的仰慕。而且一个懂得感恩的人无论何时何地都会受人敬佩的。从我了解到的所有人中，只有刘智杰和阿丹会这样。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-14T11:58:55+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>最好的教育方式永远是身教而非言传。</p>
+<p>就好像绝大多数家长整天嘴里念叨着知识改变命运、读书改变命运，结果自己一本书都没有看过，每天沉浸短视频嘎嘎乐一样。结果还在抱怨自己的孩子为什么对读书提不起兴趣。</p>
+<p>讽刺且滑稽。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-14T11:40:49+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p><a target="_blank" rel="noopener" href="https://www.bilibili.com/video/BV11tKdzAEcc/?spm_id_from=333.1007.tianma.3-4-10.click&vd_source=237394e86819f07927a9561d44217626">https://www.bilibili.com/video/BV11tKdzAEcc/?spm_id_from=333.1007.tianma.3-4-10.click&amp;vd_source=237394e86819f07927a9561d44217626</a><br>今天看到一个关于消费主义陷阱的视频，反思一下，自己之前完全深陷消费主义陷阱。疯狂买不需要的东西。<br>消费主义三大陷阱</p>
+<ul>
+<li>长期主义</li>
+<li>爱自己</li>
+<li>客体化规训<br>我在思考咖啡是否也是消费主义陷阱之一，将咖啡和白领、高知分子、生活品质感来进行捆绑，但事实上人们并没有那么的需要。<br>现如今的外卖大战也是，虽然外卖价格的确下降，但是正是这种让自己捡便宜的心态让自己买了许多自己原本不需要的东西。比如外卖大战开始后，我开始疯狂购买奶茶，总共的支出甚至高于外卖大战开始前。<br>之前还在考虑要不要花三百块钱买一条所谓长期主义单品的裤子，现在看来买点东西之前真得自己掂量掂量物品能带来的价值。</li>
+</ul>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-14T11:32:56+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p><a target="_blank" rel="noopener" href="https://www.dedao.cn/course/article?id=BQe6EGjvO7zRKZq0mmXnDrkMLPgAp9">https://www.dedao.cn/course/article?id=BQe6EGjvO7zRKZq0mmXnDrkMLPgAp9</a><br>得到里脱不花和李笑来的长谈栏目还没看完，但目前为止可以总结出一个self talk的框架了：<br>自我定义：如我是一个从来不抽烟的人<br>原因：因为烟很臭&#x2F;因为抽烟让我感到被剥削<br>情绪标签：我一抽烟就难受（上面抽烟感到被剥削也有上情绪的成分）<br>所以我就在思考，用这种方式让我戒掉甜饮、咖啡和成瘾性消费。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-14T11:23:37+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>有必要优化自己的信息源，就像老王做的那样。<br>但这也就引出一个问题：什么样的信息才算是优质的信息？评价的维度和标准都有哪些？</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-14T11:22:16+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>Math Don’t Lie. 昨天看天意老师讲的概率统计，讲到关于去做自己热爱的事情成功概率高还是做自己不热爱的。又想到了李笑来在《思考的真相》中提出要学概率统计，用概率思维的方式去思考。很有意思！</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-13T01:04:34+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>用Redefine的时候看到演示博客里有一个渐变的加载页面，在官方文档里找半天也没找到。就去给作者发邮箱问，发现每个人都很友善的回复并且帮助我。发现了一种很古早的链接方式，也感受到了科技魅力，太有趣了。其实就在官方文档里放着，只不过我太蠢了没看见…又被自己蠢到了</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-13T01:00:56+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>所有事情都是这样，只要今天不做，明天、后天、一辈子都不会去做。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-13T00:57:14+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>Obsidian管理博客文章不是很好用，我发现很多IT人用的都是Typora，明天让我用来试试。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-13T00:56:28+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>突然想舍弃滴答清单转微软待办了，因为够简洁，不需要花大量时间和精力在管理上。<br>如果过分注重管理，就很难真正投入的去做事情了。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-13T00:54:14+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>刚刚刷了个视频看到年轻人每天熬夜不规律作息喝饮料导致年纪轻轻就得尿毒症。<br>突然想起上了大学之后频繁喝咖啡奶茶熬夜。<br>从明天开始规律作息，只喝白开水。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-13T00:52:43+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>大晚上的睡不着，气的我在床上跳舞🕺，我猜是因为喝茶的原因</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-12T21:31:02+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>事实上我并不喜欢争辩，因为改变一个人的成本太过于昂贵。如果你坚信一个想法，就真金白银的去下注，现实世界会回应给你答案。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-12T18:57:58+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>读了很多书，有一个很严重的误区就是不假思索全盘吸收。而这样的后果就是自己认为很对的道理实际上并不真的相信，从而导致看的书成为了一堆正确的废话…<br>不如慢一点、认真思考一点，可以不相信很多东西，但笃信的道理和知识就真的去践行。</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-12T18:38:09+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>我对知识管理的理解是这样的：<br>我的知识管理需要经历：学习 -&gt; 形成碎片化知识 -&gt; 将碎片化知识记录到flomo中 -&gt; 碎片化知识总结框架构建知识体系&#x2F;系统 -&gt; 通过输出（到博客）对系统进行巩固和完善。<br>我思考如何将我的整个过程进行呈现，而说说刚好可以放置flomo这个碎片化知识的过程。可是一条一条导入麻烦且慢，我在思考有没有什么方法（交给AI&#x2F;插件）来自动导入。如果能写这么一个插件，我就能写另外一个：即将flomo里的内容转化成md文件，方便我用obsidian双链形成系统。<br>作为一个todo吧，如果我的编程能力足够的话…</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-12T16:58:13+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>情绪是理性的快捷方式。<br>我曾经一个很严重的误区是被冲动和欲望驱使，但是在应当合理感受情绪时用理性遏制</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-11T22:32:31+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>刚蛋都打上德鲁联赛了，我能打上校联赛吗…</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-11T14:13:00+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>明天接着学计算机网络，顺便给概率统计也学了…</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+		<li class="w-full flex flex-row relative">
+			<div class="w-10 h-10 mr-4 rounded-lg overflow-hidden border border-border-color p-[1px] shrink-0">
+				<img src="/images/tutouchouchou.jpg" class="w-full h-full rounded-[6.2px]">
+			</div>
+			<div class="w-full border-border-color rounded-xl rounded-tl-none shadow-redefine-flat overflow-hidden">
+				<!-- Pass the raw date here in a data attribute -->
+				
+				<div class="essay-date px-4 py-1.5 text-sm border-b border-border-color bg-zinc-50 dark:bg-zinc-800 text-third-text-color" data-date="2025-07-11T05:00:00+08:00">Loading Date...</div>
+				<div id="shuoshuo-content" class="px-4 py-2"><p>这是我的第一条说说，用来测试说说页面</p>
+</div>
+			</div>
+			<div class="absolute left-[50.5px] top-3 transform w-2 h-2 border-solid border-t border-l bg-zinc-50 -rotate-45 border-border-color dark:bg-zinc-800"></div>
+		</li>
+		
+	</ul>
+</div>
+	
+
+	<div class="page-template-content markdown-body">
+		
+
+		
+	</div>
+
+	<div class="page-template-comments">
+		
+		<div class="comments-container mt-10 w-full ">
+    <div id="comment-anchor" class="w-full h-2.5"></div>
+    <div class="comment-area-title w-full my-1.5 md:my-2.5 text-xl md:text-3xl font-bold">
+        Comments
+    </div>
+    
+
+        
+            
+    <div id="waline"></div>
+    <script type="module" data-swup-reload-script>
+      import { init } from '/js/libs/waline.mjs';
+
+      function loadWaline() {
+        init({
+          el: '#waline',
+          serverURL: 'https://comments.silenttide.online/',
+          dark: 'body[class~="dark-mode"]',
+          reaction: false,
+          requiredMeta: ['nick', 'mail'],
+          emoji: [],
+                    lang: 'zh-CN',
+        });
+      }
+
+      if (typeof swup !== 'undefined') {
+        loadWaline();
+      } else {
+        window.addEventListener('DOMContentLoaded', loadWaline);
+      }
+    </script>
+
+
+
+        
+    
+</div>
+
+		
+	</div>
+</div>
+
+<div class="paginator">
+	
+</div>
+  
+			</div>
+
+			
+		</div>
+
+		<div class="main-content-footer">
+			<footer class="footer mt-5 py-5 h-auto text-base text-third-text-color relative border-t-2 border-t-border-color">
+    <div class="info-container py-3 text-center">
+        
+        <div class="text-center">
+            &copy;
+            
+              <span>2025</span>
+              -
+            
+            2025&nbsp;&nbsp;<i class="fa-solid fa-heart fa-beat" style="--fa-animation-duration: 0.5s; color: #f54545"></i>&nbsp;&nbsp;<a href="/">Solmar</a>
+            
+                
+                <p class="post-count space-x-0.5">
+                    <span>
+                        2 posts in total
+                    </span>
+                    
+                </p>
+            
+        </div>
+        
+            <script data-swup-reload-script src="https://cn.vercount.one/js"></script>
+            <div class="relative text-center lg:absolute lg:right-[20px] lg:top-1/2 lg:-translate-y-1/2 lg:text-right">
+                
+                    <span id="busuanzi_container_site_uv" class="lg:!block">
+                        <span class="text-sm">VISITOR COUNT</span>
+                        <span id="busuanzi_value_site_uv"></span>
+                    </span>
+                
+                
+                    <span id="busuanzi_container_site_pv" class="lg:!block">
+                        <span class="text-sm">TOTAL PAGE VIEWS</span>
+                        <span id="busuanzi_value_site_pv"></span>
+                    </span>
+                
+            </div>
+        
+        <div class="relative text-center lg:absolute lg:left-[20px] lg:top-1/2 lg:-translate-y-1/2 lg:text-left">
+            <span class="lg:block text-sm">POWERED BY <?xml version="1.0" encoding="utf-8"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg class="relative top-[2px] inline-block align-baseline" version="1.1" id="圖層_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="1rem" height="1rem" viewBox="0 0 512 512" enable-background="new 0 0 512 512" xml:space="preserve"><path fill="#0E83CD" d="M256.4,25.8l-200,115.5L56,371.5l199.6,114.7l200-115.5l0.4-230.2L256.4,25.8z M349,354.6l-18.4,10.7l-18.6-11V275H200v79.6l-18.4,10.7l-18.6-11v-197l18.5-10.6l18.5,10.8V237h112v-79.6l18.5-10.6l18.5,10.8V354.6z"/></svg><a target="_blank" class="text-base" href="https://hexo.io">Hexo</a></span>
+            <span class="text-sm lg:block">THEME&nbsp;<a class="text-base" target="_blank" href="https://github.com/EvanNotFound/hexo-theme-redefine">Redefine v2.8.5</a></span>
+        </div>
+        
+        
+            <div>
+                Blog up for <span class="odometer" id="runtime_days" ></span> days <span class="odometer" id="runtime_hours"></span> hrs <span class="odometer" id="runtime_minutes"></span> Min <span class="odometer" id="runtime_seconds"></span> Sec
+            </div>
+        
+        
+            <script data-swup-reload-script>
+                try {
+                    function odometer_init() {
+                    const elements = document.querySelectorAll('.odometer');
+                    elements.forEach(el => {
+                        new Odometer({
+                            el,
+                            format: '( ddd).dd',
+                            duration: 200
+                        });
+                    });
+                    }
+                    odometer_init();
+                } catch (error) {}
+            </script>
+        
+        
+        
+    </div>  
+</footer>
+		</div>
+	</div>
+
+	
+
+	<div class="right-side-tools-container">
+		<div class="side-tools-container">
+	<ul class="hidden-tools-list">
+		<li class="right-bottom-tools tool-font-adjust-plus flex justify-center items-center">
+			<i class="fa-regular fa-magnifying-glass-plus"></i>
+		</li>
+
+		<li class="right-bottom-tools tool-font-adjust-minus flex justify-center items-center">
+			<i class="fa-regular fa-magnifying-glass-minus"></i>
+		</li>
+
+		<li class="right-bottom-tools tool-dark-light-toggle flex justify-center items-center">
+			<i class="fa-regular fa-moon"></i>
+		</li>
+
+		<!-- rss -->
+		
+
+		
+
+		<li class="right-bottom-tools tool-scroll-to-bottom flex justify-center items-center">
+			<i class="fa-regular fa-arrow-down"></i>
+		</li>
+	</ul>
+
+	<ul class="visible-tools-list">
+		<li class="right-bottom-tools toggle-tools-list flex justify-center items-center">
+			<i class="fa-regular fa-cog fa-spin"></i>
+		</li>
+		
+		<li class="right-bottom-tools tool-scroll-to-top flex justify-center items-center">
+			<i class="arrow-up fas fa-arrow-up"></i>
+			<span class="percent"></span>
+		</li>
+		
+		
+	</ul>
+</div>
+	</div>
+
+	<div class="image-viewer-container">
+	<img src="">
+</div>
+
+	
+	<div class="search-pop-overlay">
+	<div class="popup search-popup">
+		<div class="search-header">
+			<span class="search-input-field-pre">
+				<i class="fa-solid fa-keyboard"></i>
+			</span>
+			<div class="search-input-container">
+				<input autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Search..." spellcheck="false" type="search" class="search-input">
+			</div>
+			<span class="popup-btn-close">
+				<i class="fa-solid fa-times"></i>
+			</span>
+		</div>
+		<div id="search-result">
+			<div id="no-result">
+				<i class="fa-solid fa-spinner fa-spin-pulse fa-5x fa-fw"></i>
+			</div>
+		</div>
+	</div>
+</div>
+	
+
+</main>
+
+
+<script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/Swup.min.js" ></script><script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/SwupSlideTheme.min.js" ></script><script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/SwupScriptsPlugin.min.js" ></script><script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/SwupProgressPlugin.min.js" ></script><script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/SwupScrollPlugin.min.js" ></script><script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/SwupPreloadPlugin.min.js" ></script>
+<script>
+    const swup = new Swup({
+        plugins: [
+            new SwupScriptsPlugin({
+                optin: true,
+            }),
+            new SwupProgressPlugin(),
+            new SwupScrollPlugin({
+                offset: 80,
+            }),
+            new SwupSlideTheme({
+                mainElement: ".main-content-body",
+            }),
+            new SwupPreloadPlugin(),
+        ],
+        containers: ["#swup"],
+    });
+</script>
+
+
+
+	<script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/imageViewer.js" ></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/utils.js" ></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/main.js" ></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/layouts/navbarShrink.js" ></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/scrollTopBottom.js" ></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/lightDarkSwitch.js" ></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/layouts/categoryList.js" ></script>
+
+
+    <script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/localSearch.js" ></script>
+
+
+
+    <script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/codeBlock.js" ></script>
+
+
+
+    <script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/layouts/lazyload.js" ></script>
+
+
+
+    <script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/runtime.js" ></script>
+    <script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/odometer.min.js" ></script>
+    <link rel="stylesheet" href="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/assets/odometer-theme-minimal.css">
+
+
+
+  <script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/Typed.min.js" ></script>
+  <script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/plugins/typed.js" ></script>
+
+
+
+
+
+
+
+
+
+
+    <script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/tools/tocToggle.js" data-swup-reload-script></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/layouts/toc.js" data-swup-reload-script></script><script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/plugins/tabs.js" data-swup-reload-script></script>
+
+
+<script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/moment-with-locales.min.js" data-swup-reload-script></script>
+<script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/layouts/essays.js" data-swup-reload-script></script>
+
+
+
+
+    <script type="module" src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/layouts/bookmarkNav.js" ></script>
+
+	
+	<div id="aplayer"></div>
+<script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/libs/APlayer.min.js" ></script>
+<script  src="https://evan.beee.top/projects/hexo-theme-redefine@2.8.5/source/js/build/plugins/aplayer.js" ></script>
+
+	
+</body>
+
+</html>
