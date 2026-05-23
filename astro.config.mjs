@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import vercel from '@astrojs/vercel';
 
 export default defineConfig({
-  site: 'https://minus.dev',
+  site: 'https://silenttide.online',
   integrations: [mdx()],
   vite: {
     plugins: [tailwindcss()],
