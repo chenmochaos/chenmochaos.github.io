@@ -1,0 +1,24 @@
+---
+const skills = ['TypeScript', 'React', 'Node.js', 'Web3', 'AI', 'Linux'];
+---
+
+<section class="py-20 border-t border-border reveal">
+  <h2 class="text-2xl font-semibold mb-6">About</h2>
+  <div class="space-y-4 text-text-muted leading-relaxed">
+    <p>
+      Computer science student with a passion for building. Currently diving deep into
+      full-stack development, Web3 protocols, and AI applications.
+    </p>
+    <p>
+      I believe in learning by doing — every project is an opportunity to understand
+      something new at a fundamental level.
+    </p>
+  </div>
+  <div class="flex flex-wrap gap-2 mt-6">
+    {skills.map((skill) => (
+      <span class="bg-bg-card border border-border px-3 py-1 rounded-full text-sm text-text-muted">
+        {skill}
+      </span>
+    ))}
+  </div>
+</section>

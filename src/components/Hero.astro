@@ -1,0 +1,52 @@
+---
+import SocialLinks from './SocialLinks.astro';
+
+const status = 'CS Student · Full-Stack · Web3 · AI';
+
+const now = [
+  { label: 'Building', value: 'Personal tools & Web3 dApps' },
+  { label: 'Learning', value: 'Distributed systems & LLM agents' },
+  { label: 'Reading', value: 'The Pragmatic Programmer' },
+];
+---
+
+<section class="min-h-[70vh] flex flex-col justify-center pt-24 pb-16">
+  <div class="space-y-5">
+    <p class="text-sm tracking-widest uppercase text-text-dim stagger-1">
+      {status}
+    </p>
+
+    <h1 class="text-7xl md:text-8xl font-bold tracking-tight stagger-2">
+      Minus
+    </h1>
+
+    <p class="text-lg md:text-xl text-text-muted leading-relaxed max-w-2xl stagger-3">
+      Building things for the web. Exploring decentralized systems,
+      artificial intelligence, and the craft of software —
+      one project at a time.
+    </p>
+
+    <div class="flex items-center gap-6 pt-1 stagger-4">
+      <div class="flex items-center gap-2">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span class="text-sm text-text-muted">Open to opportunities</span>
+      </div>
+      <span class="text-text-dim">·</span>
+      <span class="text-sm text-text-dim">Based in China</span>
+    </div>
+
+    <SocialLinks class="pt-2 stagger-5" />
+  </div>
+
+  <div class="grid grid-cols-3 gap-4 mt-12 pt-8 border-t border-border stagger-5">
+    {now.map((item) => (
+      <div>
+        <p class="text-xs uppercase tracking-wider text-text-dim mb-1">{item.label}</p>
+        <p class="text-sm text-text-muted">{item.value}</p>
+      </div>
+    ))}
+  </div>
+</section>

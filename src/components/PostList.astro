@@ -1,0 +1,37 @@
+---
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('posts'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+---
+
+<section class="py-20 border-t border-border reveal">
+  <h2 class="text-2xl font-semibold mb-6">Writing</h2>
+  {posts.length === 0 ? (
+    <p class="text-text-dim">No posts yet. Stay tuned.</p>
+  ) : (
+    <div class="divide-y divide-border">
+      {posts.map((post) => (
+        <a
+          href={`/posts/${post.id}`}
+          class="group flex items-baseline justify-between py-5 gap-4"
+        >
+          <h3 class="font-medium group-hover:text-accent transition-colors duration-200">
+            {post.data.title}
+          </h3>
+          <time
+            datetime={post.data.pubDate.toISOString()}
+            class="text-sm text-text-dim shrink-0"
+          >
+            {post.data.pubDate.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            })}
+          </time>
+        </a>
+      ))}
+    </div>
+  )}
+</section>

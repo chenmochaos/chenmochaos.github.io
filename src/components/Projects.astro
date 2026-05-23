@@ -1,0 +1,70 @@
+---
+const projects = [
+  {
+    name: 'Project Alpha',
+    description: 'A decentralized application exploring on-chain governance mechanisms.',
+    tags: ['Solidity', 'React', 'Ethers.js'],
+    href: '#',
+  },
+  {
+    name: 'Project Beta',
+    description: 'AI-powered tool for automated code review and optimization suggestions.',
+    tags: ['Python', 'LLM', 'FastAPI'],
+    href: '#',
+  },
+  {
+    name: 'Project Gamma',
+    description: 'Full-stack platform for collaborative learning and knowledge sharing.',
+    tags: ['Next.js', 'PostgreSQL', 'Tailwind'],
+    href: '#',
+  },
+  {
+    name: 'Project Delta',
+    description: 'CLI tool for streamlining development workflows and environment setup.',
+    tags: ['Rust', 'CLI', 'Linux'],
+    href: '#',
+  },
+];
+---
+
+<section class="py-20 border-t border-border reveal">
+  <h2 class="text-2xl font-semibold mb-6">Projects</h2>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {projects.map((project) => (
+      <a
+        href={project.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="group block bg-bg-card border border-border rounded-lg p-6 hover:border-accent/30 hover:scale-[1.02] transition-all duration-200"
+      >
+        <div class="flex items-start justify-between">
+          <h3 class="font-semibold text-lg group-hover:text-accent transition-colors duration-200">
+            {project.name}
+          </h3>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="text-text-dim group-hover:text-accent transition-colors duration-200 mt-1 shrink-0"
+          >
+            <path d="M7 17L17 7" />
+            <path d="M7 7h10v10" />
+          </svg>
+        </div>
+        <p class="text-text-muted text-sm mt-2 leading-relaxed">
+          {project.description}
+        </p>
+        <div class="flex flex-wrap gap-2 mt-4">
+          {project.tags.map((tag) => (
+            <span class="text-xs text-text-dim">{tag}</span>
+          ))}
+        </div>
+      </a>
+    ))}
+  </div>
+</section>

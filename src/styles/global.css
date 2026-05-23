@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #000000;
+  --color-bg-card: #141414;
+  --color-bg-hover: #1a1a1a;
+  --color-border: #262626;
+  --color-text: #fafafa;
+  --color-text-muted: #a1a1a1;
+  --color-text-dim: #6b6b6b;
+  --color-accent: #e5e5e5;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+
+  --max-width-content: 800px;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-bg);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 3px;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes line-expand {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease both;
+}
+
+.stagger-1 { animation: fade-in-up 0.7s ease 0.1s both; }
+.stagger-2 { animation: fade-in-up 0.7s ease 0.25s both; }
+.stagger-3 { animation: fade-in-up 0.7s ease 0.4s both; }
+.stagger-4 { animation: slide-in-right 0.7s ease 0.55s both; }
+.stagger-5 { animation: fade-in 0.8s ease 0.7s both; }
+
+.animate-line-expand {
+  animation: line-expand 0.8s ease 0.9s both;
+  transform-origin: left;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
