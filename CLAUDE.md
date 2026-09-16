@@ -4,10 +4,10 @@
 Minus 的个人博客网站，集个人名片与文章发布于一体。黑色简约高级风格，参考 https://letters.thedankoe.com/。
 
 ## Tech Stack
-- **Framework**: Astro v5 + MDX
-- **Styling**: Tailwind CSS v4
+- **Framework**: Astro v6 + MDX
+- **Styling**: Tailwind CSS v4 (CSS-first config, 无 tailwind.config.mjs)
 - **Animation**: CSS native transitions only (no JS animation libraries)
-- **Deploy**: Vercel (Static)
+- **Deploy**: GitHub Pages (via GitHub Actions, static) — https://chenmochaos.github.io/
 - **Package Manager**: pnpm
 
 ## Directory Structure
@@ -35,8 +35,10 @@ Blog/
 │       └── global.css            # Tailwind directives + custom base styles
 ├── public/
 │   └── fonts/                    # Self-hosted fonts if needed
+├── .github/
+│   └── workflows/
+│       └── deploy.yml            # GitHub Pages 构建 + 发布
 ├── astro.config.mjs
-├── tailwind.config.mjs
 ├── tsconfig.json
 ├── package.json
 └── CLAUDE.md
