@@ -4,9 +4,9 @@ import SocialLinks from './SocialLinks.astro';
 const status = 'CS Student · Full-Stack · AI · Robots';
 
 const now = [
-  { label: 'Building', value: 'Redis-backed backend services' },
-  { label: 'Learning', value: 'Redis cache' },
-  { label: 'Reading', value: 'Hello Algo & The Simple Path to Wealth' },
+  { label: 'Building', value: ['Redis-backed backend services'] },
+  { label: 'Learning', value: ['Redis', 'SpringAI'] },
+  { label: 'Reading', value: ['Hello Algo', 'The Simple Path to Wealth'] },
 ];
 ---
 
@@ -45,7 +45,9 @@ const now = [
     {now.map((item) => (
       <div>
         <p class="text-xs uppercase tracking-wider text-text-dim mb-1">{item.label}</p>
-        <p class="text-sm text-text-muted">{item.value}</p>
+        {item.value.map((line) => (
+          <p class="text-sm text-text-muted leading-snug">{line}</p>
+        ))}
       </div>
     ))}
   </div>
