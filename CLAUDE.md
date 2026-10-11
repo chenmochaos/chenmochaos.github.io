@@ -110,3 +110,8 @@ draft: false
 - Images must have explicit width/height or use Astro's `<Image>` component
 - All colors from the design system, no hardcoded hex values outside Tailwind config
 - Responsive: mobile-first, single breakpoint at `md` (768px) is enough for this layout
+
+
+
+
+-
