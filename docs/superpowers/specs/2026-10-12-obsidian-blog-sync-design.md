@@ -187,7 +187,7 @@ manifest 结构：
 | 文件 | 改动 | 原因 |
 |---|---|---|
 | `src/content.config.ts` | loader pattern 改为 `**/*.{md,mdx}` | 同步产物是 `.md`，当前 glob 只收 `.mdx`（此坑已踩过 3 次） |
-| `src/content.config.ts` | `description: z.string().optional()` | 无摘要的文章是合法状态 |
+| `src/content.config.ts` | `description` 可选；并把 YAML 空值（`description:` 留空 → `null`）与纯空白串归一成 `undefined` | 无摘要的文章是合法状态，而「留空」是最自然的写法。Astro 6 用 js-yaml 解析 frontmatter，空值得到 `null`，`.optional()`/`.default()` 都不接受它——不归一化会让 `pnpm build` 硬失败（实测退出码 1） |
 | `src/components/PostList.astro` | 标题下方渲染 `post.data.description`，缺失时不渲染该行 | 当前组件根本没渲染摘要，需先补上才能谈"没有就不显示" |
 | `src/layouts/PostLayout.astro` | `description?: string` | 类型跟随 schema |
 | `src/layouts/PostLayout.astro` | `.prose-custom` 补齐表格、h4/h5/h6、任务列表、嵌套列表样式 | 见 §9.1 |

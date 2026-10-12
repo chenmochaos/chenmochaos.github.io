@@ -3119,15 +3119,26 @@ spec 合规复审判定 §7.1 的第二个合取项「文件路径等于 manifes
 import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
 
+// YAML 的空值写法（`description:` 后面什么都不写）解析出来是 null，而 `.optional()` 只接受 undefined、
+// `.default()` 也只对 undefined 生效——「留空」恰恰是最自然的写法，不归一化会让 astro build 直接退出 1。
+// 用 preprocess 折成 undefined，而不是 `.nullish()`：后者把 null 放行到页面层，BaseLayout 的描述兜底失效，
+// 渲染出空的 <meta name="description">。
+const blankAsAbsent = (schema) =>
+  z.preprocess((value) => {
+    if (value === null) return undefined;
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    return value;
+  }, schema);
+
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
   schema: z.object({
     title: z.string(),
-    description: z.string().optional(),
-    pubDate: z.coerce.date(),
-    tags: z.array(z.string()).optional(),
-    draft: z.boolean().default(false),
-    syncedFrom: z.string().optional(),
+    description: blankAsAbsent(z.string().optional()),
+    pubDate: blankAsAbsent(z.coerce.date()),
+    tags: blankAsAbsent(z.array(z.string()).optional()),
+    draft: blankAsAbsent(z.boolean().default(false)),
+    syncedFrom: blankAsAbsent(z.string().optional()),
   }),
 });
 
@@ -3135,6 +3146,11 @@ export const collections = { posts };
 ```
 
 要点：`pattern` 同时收 `.md` 与 `.mdx`（同步产物是 `.md`，手写文章仍是 `.mdx`）；`description` 改为可选；`syncedFrom` 显式声明，避免依赖 Zod 对未知键的默认剥离行为。
+
+`blankAsAbsent` 是这次复审抓到的真缺陷的修法，三处取值都要跟上：
+- **为什么必须归一化**：`description:` 后面留空是 YAML 的 `null`，`.optional()` 只接受 `undefined`、`.default()` 也只对 `undefined` 生效，于是最自然的「留空」写法会让 `astro build` 退出 1（`[InvalidContentEntryDataError] description: Expected type "string", received "object"`）。同步产物走不到这条路径（`note.mjs` 的 `pickDescription` 跳过非字符串、`buildOutput` 在 `undefined` 时整行不写），**只有手写文章会撞上**——而 Task 9 的模板恰恰把 `description` 留空给用户填。
+- **为什么不用 `.nullish()`**：它把 `null` 放行到页面层，`BaseLayout` 的 `description = 'Personal blog & digital garden'` 兜底只对 `undefined` 生效，结果是渲染出 **空的** `<meta name="description">`，比构建失败更隐蔽。
+- **为什么连 `pubDate` 也包**：`z.coerce.date()` 对 `null` 会 `new Date(null)` → `1970-01-01`，静默写错日期；包上之后空 `pubDate:` 直接报「必填」，把静默错误换成响亮失败。`tags`/`draft` 同属「空值 = null」这一类，一并归一。
 
 - [ ] **Step 2: 列表页渲染摘要（缺失则不渲染）**
 
@@ -3206,6 +3222,36 @@ Expected: 成功，且页面数 ≥ 5（首页 + 404 + 4 篇既有文章）。
 
 Run: `git status --short src/content/posts`
 Expected: 无输出（既有 4 篇 `.mdx` 未被改动）。
+
+**空值用例（YAML 空值 = `null`）**：这是上面那个 Critical 的直接复现，必须留一条可重跑的证据。在**隔离副本**里验——别把临时文章写进 `src/content/posts/`，那是正式文章目录，删不干净就会跟着一起发布：
+
+```bash
+SITE=$(mktemp -d)
+tar -cf - -C /home/minus/Code/Full-Stack/Projects/Blog --exclude=node_modules --exclude=.git . | tar -xf - -C "$SITE"
+ln -s /home/minus/Code/Full-Stack/Projects/Blog/node_modules "$SITE/node_modules"   # 软链够用；跑不动就 cp -al（同设备）或 cp -r
+cd "$SITE"
+
+# 三篇各留一个空值：任一没被归一化，这次构建就会失败，报错信息会指名是哪个字段
+printf -- '---\ntitle: 空摘要\npubDate: 2026-10-13\ndescription:\n---\n\n正文\n' > src/content/posts/blank-desc.md
+printf -- '---\ntitle: 空标签\npubDate: 2026-10-13\ntags:\n---\n\n正文\n'      > src/content/posts/blank-tags.md
+printf -- '---\ntitle: 空草稿\npubDate: 2026-10-13\ndraft:\n---\n\n正文\n'     > src/content/posts/blank-draft.md
+pnpm exec astro build; echo "exit=$?"
+grep -o '<meta name="description"[^>]*>' dist/posts/blank-desc/index.html
+```
+
+Expected: `exit=0`；`blank-desc` 的 meta 回落到站点默认描述（`Personal blog & digital garden`），**不是**空 `content=""`（这正是不能用 `.nullish()` 收工的原因）。
+
+再验反方向与空日期（**前后各跑一次才算验过**，只跑修好后的那一次等于没证明修的就是这个点）：
+
+```bash
+# 反方向：schema 退回 description: z.string().optional()，同一批用例必须失败
+pnpm exec astro build; echo "exit=$?"        # Expected: exit=1 + [InvalidContentEntryDataError] description: Expected type "string", received "object"
+# 空 pubDate 必须响亮报错，而不是静默变成 1970-01-01
+printf -- '---\ntitle: 空日期\npubDate:\n---\n\n正文\n' > src/content/posts/blank-date.md
+pnpm exec astro build; echo "exit=$?"        # Expected: exit=1
+```
+
+验完 `rm -rf "$SITE"`（副本在 `mktemp -d` 给的临时目录里，不在仓库内）。
 
 - [ ] **Step 5: 提交**
 
