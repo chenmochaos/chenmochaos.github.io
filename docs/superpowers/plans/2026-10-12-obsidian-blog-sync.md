@@ -347,7 +347,7 @@ test('pubDate 优先级：pubDate > date > 文件 mtime', () => {
 
 test('stripInlineMarkup 去掉链接与强调标记', () => {
   assert.equal(stripInlineMarkup('看 [[另一篇|这篇]] 和**加粗**'), '看 这篇 和加粗');
-  assert.equal(stripInlineMarkup('看 [[另一篇]] 和 `代码`'), '看 另一篇 和代码');
+  assert.equal(stripInlineMarkup('看 [[另一篇]] 和 `代码`'), '看 另一篇 和 代码');
   assert.equal(stripInlineMarkup('![图](http://x/y.png) 文字'), '文字');
 });
 
@@ -434,7 +434,7 @@ Expected: FAIL —— `Cannot find module './note.mjs'`
 
 ```js
 import { createHash } from 'node:crypto';
-import yaml from 'js-yaml';
+import { load } from 'js-yaml'; // js-yaml v5 的 ESM 产物没有 default export，只能用具名导入
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
@@ -444,10 +444,17 @@ const SKIP_LINE_PATTERNS = [
   /^>/, // 引用与 callout
   /^[-*+]\s/, // 无序列表
   /^\d+\.\s/, // 有序列表
-  /^```/, // 代码围栏
   /^\|/, // 表格
   /^-{3,}\s*$/, // 分隔线
 ];
+
+/**
+ * 代码围栏行。围栏必须成对跟踪，光把围栏标记行放进 SKIP_LINE_PATTERNS 是不够的：
+ * 标记行被跳过了，围栏**内容**却会被当成正文抽出来当摘要。
+ * 只认反引号围栏——实测 vault 中 `~~~` 围栏 0 处；transform 模块另需识别 `~~~`，
+ * 那是为了防止改写围栏内的内容，风险不同，不在此处照搬。
+ */
+const FENCE_RE = /^`{3,}/;
 
 /** 拆出 YAML frontmatter 与正文。解析失败不抛异常，通过 error 字段上报。 */
 export function parseNote(raw) {
@@ -457,7 +464,7 @@ export function parseNote(raw) {
   const body = raw.slice(match[0].length);
   let parsed;
   try {
-    parsed = yaml.load(match[1]);
+    parsed = load(match[1]);
   } catch (error) {
     return { data: {}, body: raw, error: `frontmatter YAML 解析失败：${error.message}` };
   }
@@ -506,8 +513,14 @@ export function stripInlineMarkup(text) {
 
 /** 正文第一个普通段落，跳过标题/图片/引用/列表/代码/表格。 */
 export function firstParagraph(body) {
+  let inFence = false;
   for (const rawLine of body.split(/\r?\n/)) {
     const line = rawLine.trim();
+    if (FENCE_RE.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue; // 未闭合的围栏：其后内容一律按代码处理
     if (line === '') continue;
     if (SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line))) continue;
     const text = stripInlineMarkup(line);
@@ -550,7 +563,9 @@ export function buildOutput({ frontmatter, body }) {
   lines.push(`pubDate: ${frontmatter.pubDate}`);
   lines.push(`tags: [${frontmatter.tags.map(yamlString).join(', ')}]`);
   lines.push('draft: false', `syncedFrom: ${yamlString(frontmatter.syncedFrom)}`, '---', '');
-  return `${lines.join('\n')}${body.replace(/^\n+/, '')}`;
+  // lines 末尾的 '' 只保证 '---' 后面有一个换行；frontmatter 与正文之间还需要一个空行，
+  // 所以这里显式再补一个 '\n'，否则得到的是 '---\n正文' 而不是 '---\n\n正文'。
+  return `${lines.join('\n')}\n${body.replace(/^\n+/, '')}`;
 }
 ```
 
