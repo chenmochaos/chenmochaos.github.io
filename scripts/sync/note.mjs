@@ -22,7 +22,10 @@ const SKIP_LINE_PATTERNS = [
 const FENCE_RE = /^`{3,}/;
 
 /** 拆出 YAML frontmatter 与正文。解析失败不抛异常，通过 error 字段上报。 */
-export function parseNote(raw) {
+export function parseNote(rawInput) {
+  // 去掉可能存在的 UTF-8 BOM：FRONTMATTER_RE 锚定在开头，带 BOM 时匹配不上，
+  // 整篇笔记会被当成「没有 frontmatter」而静默漏发——连 publish: true 都读不到，报告里一声不响。
+  const raw = rawInput.startsWith('﻿') ? rawInput.slice(1) : rawInput;
   const match = raw.match(FRONTMATTER_RE);
   if (!match) return { data: {}, body: raw, error: null };
 
@@ -95,7 +98,10 @@ export function firstParagraph(body) {
 }
 
 export function truncate(text, maxChars) {
-  return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+  // 按码点切，不按 UTF-16 码元切：否则 emoji 会被切成孤立代理项，写盘再读回变成 U+FFFD，
+  // Task 6 的「内容未变则跳过」就永远判为变化，该文件每次同步都被重写。
+  const chars = [...text];
+  return chars.length > maxChars ? `${chars.slice(0, maxChars).join('')}…` : text;
 }
 
 /** 摘要优先级：description > excerpt > 正文首段；都取不到返回 undefined（调用方省略该字段）。 */
@@ -114,9 +120,15 @@ export function hashText(text) {
 }
 
 /** YAML 双引号字符串，转义反斜杠与双引号。 */
+/**
+ * 把任意值渲染成 YAML 双引号标量。
+ * 直接借 JSON.stringify：JSON 字符串是合法的 YAML 1.2 双引号标量，会转义换行、制表、
+ * C0 控制符（\u0007 等）与孤立代理项。手写只转义 \ 和 " 是不够的——标题里一个从 PDF
+ * 或终端粘来的控制符就会让 Astro 的 js-yaml（v4）解析失败、构建中断，
+ * 而 pnpm sync 那一刻报的却是成功。
+ */
 function yamlString(value) {
-  const escaped = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return `"${escaped}"`;
+  return JSON.stringify(String(value));
 }
 
 /** 组装最终写盘的 .md 文本。 */

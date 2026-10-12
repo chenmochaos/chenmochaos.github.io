@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { load } from 'js-yaml';
 import {
   parseNote,
   formatDate,
   normalizePubDate,
   stripInlineMarkup,
   firstParagraph,
+  truncate,
   pickDescription,
   hashText,
   buildOutput,
@@ -78,6 +80,42 @@ test('pickDescription 优先级：description > excerpt > 正文首段', () => {
   assert.equal(pickDescription({ description: '摘要' }, '正文首段'), '摘要');
   assert.equal(pickDescription({ excerpt: '摘录' }, '正文首段'), '摘录');
   assert.equal(pickDescription({}, '正文首段'), '正文首段');
+});
+
+test('truncate 按码点切割，不在 emoji 中间切出孤立代理项', () => {
+  const text = `${'a'.repeat(119)}🚀more`;
+  assert.equal(truncate(text, 120), `${'a'.repeat(119)}🚀…`);
+  // 按 UTF-16 码元切会得到 'a'×119 + '\ud83d'（孤立高位代理项），写盘再读回变成 U+FFFD，
+  // 于是 Task 6 的「内容未变则跳过」永远判为变化，那个文件每次同步都会被重写。
+  assert.equal(truncate('🚀'.repeat(120), 120), '🚀'.repeat(120));
+});
+
+test('带 UTF-8 BOM 的笔记仍能解析出 frontmatter', () => {
+  const note = parseNote('﻿---\ntitle: 标题\npublish: true\n---\n\n正文\n');
+  assert.equal(note.data.publish, true);
+  assert.equal(note.data.title, '标题');
+  assert.equal(note.body, '\n正文\n');
+  assert.equal(note.error, null);
+});
+
+test('buildOutput 的 frontmatter 能被 YAML 原样解析回来（换行、控制符、引号）', () => {
+  // 用 js-yaml v5 校验往返。注意 Astro 内部用的是 v4，两者在「双引号标量里的裸换行」上行为不同
+  // （v5 抛错、v4 静默折叠成空格），所以输出必须取两边都接受的形式：JSON 字符串。
+  const titles = ['普通标题', 'a\nb', 'a\rb', 'a\x07b', 'a\tb', 'a"b', 'a\\b', 'a#b', '', 'null', '真：冒号'];
+  for (const title of titles) {
+    const out = buildOutput({
+      frontmatter: { title, slug: 'a', pubDate: '2026-01-01', tags: [], syncedFrom: 'x.md' },
+      body: '正文',
+    });
+    const lines = out.split('\n');
+    const end = lines.indexOf('---', 1);
+    assert.ok(end > 0, `frontmatter 未正常收尾：${JSON.stringify(out)}`);
+    assert.equal(
+      load(lines.slice(1, end).join('\n')).title,
+      title,
+      `标题没有原样往返：${JSON.stringify(title)}`,
+    );
+  }
 });
 
 test('pickDescription 取不到任何内容时返回 undefined', () => {
