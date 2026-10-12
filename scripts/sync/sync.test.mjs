@@ -288,7 +288,8 @@ test('formatReport 折叠重复出现的同一条警告', () => {
 });
 
 // 闸门 a：vaultDir 指向一个能读、但没有 .md 的目录时，「扫描结果里没有」不等于「源笔记已删除」。
-// 判据是「一篇 .md 都没扫到」，而不是「没有可发布的笔记」——后者见上一条测试，是正常状态。
+// 判据是「一篇 .md 都没扫到」，而不是「没有可发布的笔记」——后者是用户取消发布的正常状态，
+// 见「取消 publish 后删除生成文件与图片目录」。
 test('一篇笔记都没扫到而清单非空时，拒绝删除并报错', () => {
   const { root, config } = makeFixture({
     'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
@@ -409,5 +410,28 @@ test('生成文件被手工改过后取消发布不会静默删除', () => {
   assert.equal(result.deleted.length, 0);
   assert.match(fs.readFileSync(generated, 'utf8'), /我手写的一段补充/); // 改动还在
   assert.ok(result.warnings.some((warning) => /手工改过/.test(warning)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 生成文件已被手工删除、清单条目仍在：这不算「被改过」——没有内容可保护，照常生成删除动作把
+// 清单清干净。否则条目会永远留在清单里，每次同步都当成待删项重复报告。
+test('生成文件已不在磁盘上时，清单条目照常被清理', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  fs.rmSync(path.join(config.contentDirAbs, 'a.md')); // 用户手工删掉了生成文件
+
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 1); // 动作照常生成，applySync 对不存在的文件是 no-op
+  assert.equal(result.warnings.length, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8')).entries, {});
   fs.rmSync(root, { recursive: true, force: true });
 });

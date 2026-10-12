@@ -253,10 +253,13 @@ export function planSync(config) {
       // spec §7.4 的同胞条款。§7.4 承认「生成文件被手工改过」是真实会发生的事——用户可能直接
       // 在博客侧编辑「已发布」的版本。覆盖有下一轮 vault 兜底，删除没有：把用户的改动静默销毁
       // 不可逆。文件不存在不算「被改过」（生成物早被删了），照常生成动作把清单条目清掉。
-      if (fs.existsSync(outputPath) && hashText(fs.readFileSync(outputPath, 'utf8')) !== entry.outputHash) {
+      const currentHash = fs.existsSync(outputPath) ? hashText(fs.readFileSync(outputPath, 'utf8')) : null;
+      if (currentHash !== null && currentHash !== entry.outputHash) {
+        // 「不符」与「清单里根本没记」是两回事，分开说——后者是清单坏了，不是文件被改过。
+        const why = typeof entry.outputHash === 'string' ? '内容哈希与清单记录不符' : '清单里没有记录它的哈希';
         warnings.push(
-          `生成文件 ${slug}.md 被手工改过（内容哈希与清单记录不符），已跳过删除：` +
-            `确认无需保留后请手工删除该文件，并从 ${config.manifestPath} 里移除「${slug}」这一条`,
+          `生成文件 ${slug}.md 被手工改过或清单记录不全（${why}），已跳过删除：` +
+            `确认无需保留后删掉该文件即可，下次同步会自动清理 ${config.manifestPath} 里对应的条目`,
         );
         continue;
       }

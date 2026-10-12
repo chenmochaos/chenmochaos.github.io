@@ -108,7 +108,7 @@ test('同名附件先到先得并记录冲突警告', () => {
   assert.equal(attachments.get('shot.png'), path.join(root, 'AAA/shot.png'));
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /同名附件冲突：「zzz\/shot\.png」被忽略/);
-  // 只断言被忽略的那个，把「胜者是谁」留给注释——变异成后到先得时这条断言仍然成立
+  // 这一行只锁警告文本（改成后到先得时文本不变），胜者由上面那条 assert.equal 锁死
   assert.match(warnings[0], /一律使用「AAA\/shot\.png」/);
   fs.rmSync(root, { recursive: true, force: true });
 });

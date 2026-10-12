@@ -22,8 +22,8 @@ function toPosix(value) {
  * 的前提——readdirSync 的原始顺序由文件系统决定（ext4 是哈希序，tmpfs 是字节序），不排序就会出现
  * 「同一份 vault 在两台机器上挑中不同的同名附件」。比较器显式钉住 'en'：不传 locale 时 localeCompare
  * 跟随 $LANG/LC_ALL，同名附件的胜者乃至写进 public/images 的内容会随环境变化。这个钉子在本机测不出来
- * （ASCII 名在 'en' 与 C 下同序），换成带重音的 fixture 也只是把「测不到」换成「换个 locale 就失效」，
- * 所以由注释承担，不假装有测试覆盖。
+ * （ASCII 名在 'en' 与 C 下同序）；换成带重音的 fixture 能在本机把它测出来，但那条断言在
+ * `LC_ALL=C` 的机器上又会失效——不稳定的测试比没有更难维护，所以由注释承担，不假装有测试覆盖。
  *
  * 读不到分两档，因为代价不对称：
  * - 根目录读不到（路径拼错、盘没挂上）→ 抛错。此时「扫到 0 个文件」与「vault 是空的」无法区分，
@@ -33,7 +33,8 @@ function toPosix(value) {
  *   但调用方不能把「扫描结果里没有」当成「源笔记已删除」：部分扫描与完整扫描在这里无从区分，
  *   见 sync.mjs 的删除闸门。
  *
- * 只跳过 dot **目录**，dot 文件照收（`STX/.gitignore` 会成为一个附件名）——spec §4.1 认可的边界。
+ * 只跳过 dot **目录**，dot 文件照收（`STX/.gitignore` 会成为一个附件名）——spec §4.1 只约束了 dot
+ * 目录、对 dot 文件没有表态，这里是取舍不是规范背书。
  * 已知限制：不跟随符号链接（entry.isFile()/isDirectory() 对链接都返回 false），链接笔记会被静默跳过；
  * 真实 vault 唯一的链接在被排除的 .claude/ 下，暂不受影响。
  */
