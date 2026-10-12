@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { makeConfig } from './config.mjs';
+import { DEFAULT_CONFIG, makeConfig } from './config.mjs';
 import { scanVault, buildIndexes } from './vault.mjs';
 
 /** 建一个临时 vault 目录树，返回 { root, config }。 */
@@ -36,10 +36,39 @@ test('scanVault 跳过 dot 目录与配置里的排除目录', () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+// 全小写的文件名在本机 tmpfs 上 readdirSync 已按字节序返回 a,b,c，与 localeCompare 序恰好重合，
+// 于是删掉 sort 这项测试照样通过（变异验证：0 fail），名字里的「按名称排序」就落空了。
+// 混合大小写把两种序分开：字节序把大写排在小写前，localeCompare 按字母序交错。
 test('scanVault 结果顺序稳定（按名称排序）', () => {
-  const { root, config } = makeVault({ 'STX/b.md': 'x', 'STX/a.md': 'y', 'STX/c.md': 'z' });
-  assert.deepEqual(scanVault(config).map((f) => f.name), ['a.md', 'b.md', 'c.md']);
+  const { root, config } = makeVault({ 'STX/b.md': 'x', 'STX/A.md': 'y', 'STX/c.md': 'z', 'STX/Z.md': 'w' });
+  assert.deepEqual(scanVault(config).map((f) => f.name), ['A.md', 'b.md', 'c.md', 'Z.md']);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 根目录读不到时「扫到 0 个文件」与「vault 是空的」无法区分，而同步层会据此判定所有产物都该删除
+test('vault 根目录读不到时抛错，不静默返回空', () => {
+  const config = makeConfig({ vaultDir: path.join(os.tmpdir(), 'vault-that-does-not-exist') });
+  assert.throws(() => scanVault(config), /无法读取 vault 目录/);
+});
+
+// 权限位对 root 无效，以 root 跑测试时这条用例没有意义
+test('子目录读不到时记警告并继续扫描其余文件', (t) => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('以 root 运行时权限位不起作用');
+    return;
+  }
+  const { root, config } = makeVault({ 'locked/secret.md': 'y', 'open/a.md': 'x' });
+  const locked = path.join(root, 'locked');
+  fs.chmodSync(locked, 0o000);
+  try {
+    const warnings = [];
+    assert.deepEqual(scanVault(config, warnings).map((f) => f.relPath), ['open/a.md']);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /无法读取目录 locked：EACCES/);
+  } finally {
+    fs.chmodSync(locked, 0o755); // 先恢复权限再删，否则 rmSync 清不掉 000 目录
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('buildIndexes 分离笔记与附件，附件按小写文件名索引', () => {
@@ -50,6 +79,26 @@ test('buildIndexes 分离笔记与附件，附件按小写文件名索引', () =
   const { notes, attachments } = buildIndexes(scanVault(config));
   assert.deepEqual(notes.map((f) => f.name), ['a.md']);
   assert.equal(attachments.get('pasted image 1.png'), path.join(root, 'STX/zz_Attachments/Pasted Image 1.PNG'));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 先到先得此前只活在注释里：变异成后到先得，全部测试照样通过
+test('同名附件先到先得并记录冲突警告', () => {
+  const { root, config } = makeVault({ 'AAA/shot.png': 'first', 'zzz/shot.png': 'second' });
+  const warnings = [];
+  const { attachments } = buildIndexes(scanVault(config), warnings);
+  assert.equal(attachments.get('shot.png'), path.join(root, 'AAA/shot.png'));
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /同名附件冲突：「zzz\/shot\.png」被忽略/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// notes 用小写后缀判定，但此前 fixture 里唯一的大写文件名是附件——.MD 走哪条分支没人验过
+test('大写扩展名的 .MD 文件仍算笔记', () => {
+  const { root, config } = makeVault({ 'STX/A.MD': 'x', 'STX/zz_Attachments/B.PNG': 'y' });
+  const { notes, attachments } = buildIndexes(scanVault(config));
+  assert.deepEqual(notes.map((f) => f.name), ['A.MD']);
+  assert.equal(attachments.size, 1);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -64,5 +113,12 @@ test('makeConfig 覆盖项生效且不污染默认值', () => {
   const a = makeConfig({ vaultDir: '/tmp/v1' });
   const b = makeConfig();
   assert.equal(a.vaultDir, '/tmp/v1');
-  assert.equal(b.vaultDir, '/home/minus/Wiki');
+  assert.equal(b.vaultDir, DEFAULT_CONFIG.vaultDir);
+  // 数组若按引用共享，任何一次 push 都会污染所有 config 与默认值——只查标量查不出来
+  const before = [...DEFAULT_CONFIG.excludeDirs];
+  assert.notEqual(a.excludeDirs, DEFAULT_CONFIG.excludeDirs);
+  assert.notEqual(b.imageExtensions, DEFAULT_CONFIG.imageExtensions);
+  a.excludeDirs.push('tmp-notes');
+  assert.deepEqual(DEFAULT_CONFIG.excludeDirs, before);
+  assert.deepEqual(b.excludeDirs, before);
 });
