@@ -2305,22 +2305,25 @@ test('清单里不合 slug 形态的键不参与删除，仓库外的目录不�
 });
 
 // 键之外，清单的**值**同样不可信：entry.images 里的路径会被 applySync 直接喂给 fs.rmSync。
-test('清单里记录的图片路径跳出仓库时忽略该条并警告', () => {
-  const { root, config } = makeFixture({
-    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
-  });
+// 判据是「必须在该 slug 自己的附件目录内」，不是较松的「在仓库内」：后者会放行仓库里的任意文件，
+// 也会让指向仓库根自身（`.`）的条目穿过检查，把目录递给 rmSync 并抛 EISDIR 把整次同步打断。
+test('清单里记录的图片路径不在该 slug 的附件目录内时忽略，不会删到仓库里的其他文件', () => {
+  const { root, config, repoRoot } = makeFixture(
+    { 'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n' },
+    { 'src/components/Hero.astro': '<div />\n' }
+  );
   runSync(config);
-  fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件，被篡改的清单指向它
+  fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件
 
   const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
-  manifest.entries.a.images = ['../outside.png'];
+  manifest.entries.a.images = ['../outside.png', 'src/components/Hero.astro', '.', 42];
   fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
 
   const result = runSync(config);
 
-  assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0], /落在仓库之外/);
+  assert.equal(result.warnings.filter((w) => /不在它的附件目录内/.test(w)).length, 3);
   assert.ok(fs.existsSync(path.join(root, 'outside.png')));
+  assert.ok(fs.existsSync(path.join(repoRoot, 'src/components/Hero.astro')));
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -2511,21 +2514,27 @@ export function buildPublishedMap(notes) {
 }
 
 /**
- * 清单里记的图片路径同样是不可信输入：applySync 会把它直接喂给 `fs.rmSync`（非递归，但越界就删到仓库外）。
- * 只放行归一化后仍落在仓库内的路径，其余丢弃并警告——清单被改坏时，少删一个文件远好过删错一个文件。
+ * 清单里记的图片路径同样是不可信输入：applySync 会把它直接喂给 `fs.rmSync`。
+ * 合法值只有一种来源——本工具自己写进清单的 `public/images/<slug>/<name>`——所以判据就取这条不变量：
+ * 归一化后必须**严格落在这个 slug 自己的附件目录内**。只挡「仓库外」不够：
+ *   - 仓库里的任意文件（如 `src/components/Hero.astro`）会被一并放行并删掉，而它根本不是生成物；
+ *   - 指向仓库根自身（`.`）的条目会穿过检查，把目录递给 rmSync 并抛 EISDIR。
+ * 越界的条目丢弃并警告——清单被改坏时，少删一个文件远好过删错一个文件。
  *
  * 风险的另一半在删除循环里：那里是**键**（而不是值）参与拼路径，且用的是递归删除，所以校验必须发生在
  * 拼路径之前、以「不生成动作」的形式生效（runSync 不检查 plan.errors 就落盘）。
  */
 function safeRecordedImages(config, slug, images, warnings) {
   if (!Array.isArray(images)) return [];
-  const rootAbs = path.resolve(config.repoRoot);
+  const slugDirAbs = path.resolve(config.imagesDirAbs, slug);
   const kept = [];
   for (const image of images) {
     if (typeof image !== 'string') continue;
-    const abs = path.resolve(rootAbs, image);
-    if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
-      warnings.push(`清单里「${slug}」记录的图片路径 ${image} 落在仓库之外，已忽略该条：清单可能被手工改过`);
+    const abs = path.resolve(config.repoRoot, image);
+    if (!abs.startsWith(slugDirAbs + path.sep)) {
+      warnings.push(
+        `清单里「${slug}」记录的图片路径 ${image} 不在它的附件目录内，已忽略该条：清单可能被手工改过`
+      );
       continue;
     }
     kept.push(image);
@@ -3045,8 +3054,11 @@ spec 合规复审判定 §7.1 的第二个合取项「文件路径等于 manifes
 8. **新增测试 8 条**（清单键越界、图片路径越界、`constructor`、孤儿认领、`parseArgs`、`main` 的退出码与报告、缺 `outputHash` 的措辞、哈希过期但内容一致时不误报）。另给既有测试补 3 处断言：手工改过那条钉住「内容哈希与清单记录不符」的措辞、图片仍在引用时不被清理、报告表头总数。`sync.test.mjs` 20 → 28，累计 **120**。
 9. **spec 先改**：§7 新增第 8 条「manifest 的内容是不可信输入」，§7.1 句 1 加指路词（「路径相等」只对删除侧逐字成立），§7.2 补「内容一致时认领」的例外，§8 补 `--dry-run` 别名与未知参数的处理。
 
+10. **蓝军自查又打出一个洞（本轮自己发现，不待复审）**：`entry.images` 的判据原本写成「归一化后仍落在仓库内」，这条**不够**，而且我写的条件本身还是错的——`abs !== rootAbs && !abs.startsWith(...)` 是个 `&&`，对「等于仓库根」的条目整个判据为假、条目被放行，`applySync` 于 `rmSync(dir, { force: true })` 上抛 EISDIR 把整次同步打断（`force` 只吞 ENOENT，不吞 EISDIR）。更根本的是基座选错了：合法值只有一种来源（本工具写下的 `public/images/<slug>/<name>`），判据应取这条不变量。已改为「必须严格落在该 slug 自己的附件目录内」，测试同时覆盖仓库外文件、仓库内无关文件（`src/components/Hero.astro`）与 `.` 三种越界形态。
+
 复审列出、本轮**记录不修**的（都不属安全类，避免把这一轮摊大）：
 
+- **包含检查是词法的，不解析软链**：若有人先在本工具生成的 `public/images/<slug>/` 里放一个指向仓库外的软链、再把清单的 `images` 指过去，`fs.rmSync` 会顺着软链删掉外部目标。触发前提是仓库内**已经存在**这样一个软链，超出「误改清单」的范畴（蓝军实测：软链落在仓库根或别处时会被新判据直接挡下），留作**已知残余**；收紧要用 `realpath`，而它对不存在的路径会抛错，收益不抵复杂度。
 - **`public/images/<slug>/` 的递归删除没有哈希保护**：该目录是本工具按 slug 独占的命名空间，spec §7.3 明写「整个目录」，而 `entry.images` 已经逐个记了文件名，真要收紧有现成数据。不收的理由是「用户往生成物目录里放文件的概率低」——这是判断不是证据，留作**已知残余**。
 - **`describe` 产出的 `images` 字段其实是数量**（`action.images` 是数组），命名易混。属报告层可读性，留到 Task 8 的样式改动一批做更省事。
 - **`runSync` 的清单写条件**（内容未变则不写盘）是优化而非契约，不补测试。
