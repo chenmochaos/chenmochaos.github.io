@@ -1830,6 +1830,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { makeConfig } from './config.mjs';
 import { planSync, runSync, formatReport } from './sync.mjs';
 import { main, parseArgs } from '../sync-obsidian.mjs';
@@ -2307,23 +2308,33 @@ test('清单里不合 slug 形态的键不参与删除，仓库外的目录不�
 // 键之外，清单的**值**同样不可信：entry.images 里的路径会被 applySync 直接喂给 fs.rmSync。
 // 判据是「必须在该 slug 自己的附件目录内」，不是较松的「在仓库内」：后者会放行仓库里的任意文件，
 // 也会让指向仓库根自身（`.`）的条目穿过检查，把目录递给 rmSync 并抛 EISDIR 把整次同步打断。
+// 判据末尾那个 `+ path.sep` 也是判据本身的一部分：去掉它，`public/images/ab/x.png` 会因字符串前缀
+// 相同而被当成 slug `a` 的附件（下面两条反向断言专钉这一格——它和 `.` 那条是同一类差一字符的错误）。
 test('清单里记录的图片路径不在该 slug 的附件目录内时忽略，不会删到仓库里的其他文件', () => {
   const { root, config, repoRoot } = makeFixture(
     { 'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n' },
-    { 'src/components/Hero.astro': '<div />\n' }
+    { 'src/components/Hero.astro': '<div />\n', 'public/images/ab/x.png': PNG }
   );
   runSync(config);
   fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件
 
   const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
-  manifest.entries.a.images = ['../outside.png', 'src/components/Hero.astro', '.', 42];
+  manifest.entries.a.images = [
+    '../outside.png',
+    'src/components/Hero.astro',
+    '.',
+    42,
+    'public/images/ab/x.png', // 兄弟前缀：与 public/images/a 只差一个分隔符
+    'public/images/a', // 附件目录自身：放行它会把目录递给 rmSync 并抛 EISDIR
+  ];
   fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
 
   const result = runSync(config);
 
-  assert.equal(result.warnings.filter((w) => /不在它的附件目录内/.test(w)).length, 3);
+  assert.equal(result.warnings.filter((w) => /不在它的附件目录内/.test(w)).length, 5);
   assert.ok(fs.existsSync(path.join(root, 'outside.png')));
   assert.ok(fs.existsSync(path.join(repoRoot, 'src/components/Hero.astro')));
+  assert.ok(fs.existsSync(path.join(repoRoot, 'public/images/ab/x.png'))); // 兄弟前缀目录里的文件必须活着
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -2440,6 +2451,20 @@ test('清单里的哈希对不上、但文件内容与生成的一致时，不�
   assert.equal(result.skipped.length, 1);
   assert.deepEqual(result.warnings, []);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// CLI 尾部那几行胶水（`import.meta.url` 判定 + 分派 + 退出码 2）只有真起子进程才覆盖得到：
+// 它是用户实际敲的那条命令的入口，`parseArgs` 与 `main` 各自有测试并不代表这段接线是对的。
+// 只测未知参数这一支——成功支会真的去读 /home/minus/Wiki（DEFAULT_CONFIG 的 vaultDir），不能进测试；
+// `--force` 在 parseArgs 就返回错误，走不到 makeConfig，因此这条对 vault 是否存在不敏感。
+test('命令行入口：未知参数打印用法并以退出码 2 结束', () => {
+  const cli = path.join(import.meta.dirname, '..', 'sync-obsidian.mjs');
+  const { status, stdout, stderr } = spawnSync(process.execPath, [cli, '--force'], { encoding: 'utf8' });
+
+  assert.equal(status, 2);
+  assert.equal(stdout, ''); // 错误只走 stderr：stdout 有内容会污染 `pnpm sync | ...` 的管道
+  assert.match(stderr, /未知参数 --force/);
+  assert.match(stderr, /pnpm sync \[--dry\|--dry-run\]/);
 });
 ```
 
@@ -2902,7 +2927,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 92 + 28 = 120 项通过
+Expected: PASS —— 累计 92 + 29 = 121 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
@@ -3045,25 +3070,39 @@ spec 合规复审判定 §7.1 的第二个合取项「文件路径等于 manifes
 三条全部成立，前两条是「静默递归删除仓库外的目录」——本项目最不可接受的一类失败（不可逆、且报告里一个字都没有），Critical 无争议。
 
 1. **C1：清单的键必须先过 slug 校验。** 删除路径由键反推，键经 `path.join` 归一化后可以跳出 `contentDir`/`imagesDir`，而删除侧对它执行 `rmSync(..., { recursive: true })`。既有两道闸都拦不住：`derived !== recorded` 的两个值都由同一个键推出（自洽即放行），哈希闸在文件不存在时也放行。修法：`slug.mjs` 导出 `isValidSlug`，`planSync` 在拼路径**之前**筛掉形态不合的键并报错——不生成动作，同 §7.6/§7.7 的道理。测试夹具用上面那两个键 + 两个仓库外文件。
-2. **C1 的另一半：`entry.images` 的路径同样不可信。** 复审只点了删除侧的键，但 `applySync` 把清单里的图片路径直接喂给 `fs.rmSync`（非递归，越界即删到仓库外），来源与键完全相同。新增 `safeRecordedImages()`：只放行归一化后仍在仓库内的路径，越界的丢弃并警告。测试指向 `../outside.png`。
+2. **C1 的另一半：`entry.images` 的路径同样不可信。** 复审只点了删除侧的键，但 `applySync` 把清单里的图片路径直接喂给 `fs.rmSync`（非递归，越界即删到仓库外），来源与键完全相同。新增 `safeRecordedImages()`：只放行归一化后仍在仓库内的路径，越界的丢弃并警告。测试指向 `../outside.png`。（**判据后来按第 10 条收紧为「该 slug 自己的附件目录内」——这里保留的是当时的落地过程，别当成现行判据。**）
 3. **I1：`Object.hasOwn`。** `manifest.entries` 是 `JSON.parse` 的普通对象，`entries['constructor']` 命中 `Object.prototype.constructor`（真值），`exists && !entry` 因此为假，手写文章保护被绕过。改用 `Object.hasOwn(manifest.entries, note.slug)`（删除循环里不用改：那里的键来自 `Object.keys`，本身就是自有键）。
 4. **I2：认领孤儿产物。** `applySync` 先写文件、后存清单，中途失败会留下「文件已生成、清单没记」的产物；原逻辑对它报「请改用别的 slug」，既误导又把用户卡在一个自己删不掉的状态里。改为：内容与本次生成一致时按 skip 认领并补上清单条目，只有**内容也不同**时才判为手写冲突。
 5. **I3：`--dry-run` 不再被当成真实同步。** 原 `process.argv.slice(2).includes('--dry')` 是精确匹配，`--dry-run` 会静默走真同步，而这个命令删文件。改为导出 `parseArgs(argv)`：接受 `--dry`/`--dry-run`，未知参数报错并以退出码 2 结束。
 6. **顺带修掉的三处**：①「被手工改过，将以 vault 为准覆盖」原来在 `type === 'skip'` 时也会报（清单哈希过期/缺失但文件并没被改过）——把 `type` 的计算提到告警之前，只在真要覆写时告警；②`main` 的 catch 补一句「重新运行 pnpm sync 会接着做完」，与第 4 条的自动认领对应；③删除动作里的 `previousImages` 是死字段（删除分支整目录清 `public/images/<slug>/`，不读它），去掉。
 7. **一条空洞的测试。** `内容未变时第二次同步不改写文件` 断言 `mtimeMs <= firstMtime + 1000`：把写保护（`if (action.type !== 'skip')`）拆掉后它照样通过，1 秒容差把「重写同名文件」盖住了——一条永远绿的断言比没有更糟。改为精确相等。
-8. **新增测试 8 条**（清单键越界、图片路径越界、`constructor`、孤儿认领、`parseArgs`、`main` 的退出码与报告、缺 `outputHash` 的措辞、哈希过期但内容一致时不误报）。另给既有测试补 3 处断言：手工改过那条钉住「内容哈希与清单记录不符」的措辞、图片仍在引用时不被清理、报告表头总数。`sync.test.mjs` 20 → 28，累计 **120**。
+8. **新增测试 8 条**（清单键越界、图片路径越界、`constructor`、孤儿认领、`parseArgs`、`main` 的退出码与报告、缺 `outputHash` 的措辞、哈希过期但内容一致时不误报）。另给既有测试补 3 处断言：手工改过那条钉住「内容哈希与清单记录不符」的措辞、图片仍在引用时不被清理、报告表头总数。`sync.test.mjs` 20 → 28，累计 **120**；复审后的补测再加 1 条（见第 11 条），最终 `sync.test.mjs` 29 条、累计 **121**。
 9. **spec 先改**：§7 新增第 8 条「manifest 的内容是不可信输入」，§7.1 句 1 加指路词（「路径相等」只对删除侧逐字成立），§7.2 补「内容一致时认领」的例外，§8 补 `--dry-run` 别名与未知参数的处理。
 
 10. **蓝军自查又打出一个洞（本轮自己发现，不待复审）**：`entry.images` 的判据原本写成「归一化后仍落在仓库内」，这条**不够**，而且我写的条件本身还是错的——`abs !== rootAbs && !abs.startsWith(...)` 是个 `&&`，对「等于仓库根」的条目整个判据为假、条目被放行，`applySync` 于 `rmSync(dir, { force: true })` 上抛 EISDIR 把整次同步打断（`force` 只吞 ENOENT，不吞 EISDIR）。更根本的是基座选错了：合法值只有一种来源（本工具写下的 `public/images/<slug>/<name>`），判据应取这条不变量。已改为「必须严格落在该 slug 自己的附件目录内」，测试同时覆盖仓库外文件、仓库内无关文件（`src/components/Hero.astro`）与 `.` 三种越界形态。
 
 复审列出、本轮**记录不修**的（都不属安全类，避免把这一轮摊大）：
 
-- **包含检查是词法的，不解析软链**：若有人先在本工具生成的 `public/images/<slug>/` 里放一个指向仓库外的软链、再把清单的 `images` 指过去，`fs.rmSync` 会顺着软链删掉外部目标。触发前提是仓库内**已经存在**这样一个软链，超出「误改清单」的范畴（蓝军实测：软链落在仓库根或别处时会被新判据直接挡下），留作**已知残余**；收紧要用 `realpath`，而它对不存在的路径会抛错，收益不抵复杂度。
+- **包含检查是词法的，不解析软链——残余在 copy 侧，不在删除侧**（上一版这条写反了，按实测改正）：若 `public/images/<slug>/` **本身**是一个指向仓库外的软链，`mkdirSync(..., { recursive: true })` + `copyFileSync` 会**写穿**它，附件被写到仓库外（实测 `/tmp/round5/verify_symlink.mjs` 用例 3：文件落在 `<tmp>/outside/slug-dir/` 里）。触发前提是仓库内**已经存在**这样一个软链，超出「误改清单」的范畴，留作**已知残余**；收紧要用 `realpath`，而它对不存在的路径会抛错，收益不抵复杂度。
+  - **删除侧没有这个问题，实测反证**：`fs.rmSync` 对软链一律只 unlink 链接本身（用例 1），`recursive` 删目录时目录内的软链同样不被跟随、外部目标全部幸存（用例 2、4）。上一版这条写的是「`rmSync` 会顺着软链删掉外部目标」，与事实相反，已删掉该句。第 10 条那个蓝军断言之所以「幸存」，也不是因为它测到了软链语义——软链落在仓库根、被新判据直接丢了条目；换成「条目被放行」它也照样幸存。也就是说那条断言测的一直是包含检查，不是软链。
 - **`public/images/<slug>/` 的递归删除没有哈希保护**：该目录是本工具按 slug 独占的命名空间，spec §7.3 明写「整个目录」，而 `entry.images` 已经逐个记了文件名，真要收紧有现成数据。不收的理由是「用户往生成物目录里放文件的概率低」——这是判断不是证据，留作**已知残余**。
 - **`describe` 产出的 `images` 字段其实是数量**（`action.images` 是数组），命名易混。属报告层可读性，留到 Task 8 的样式改动一批做更省事。
 - **`runSync` 的清单写条件**（内容未变则不写盘）是优化而非契约，不补测试。
-- **CLI 尾部那几行胶水**（`import.meta.url` 判定 + 分派）没有测试覆盖：覆盖它要真起子进程，成本高于收益；`parseArgs` 与 `main` 已各自有测试。
 - **哈希缺失 vs 不符的两种措辞**现在都有测试钉住了（此前只有「不符」一支被测，另一支是我上一轮新写的文案）——这条已在本轮补上，不再挂起。
+
+11. **复审后的补测与记录改正（APPROVED_WITH_CONCERNS 的三条建议）**：
+    - **N15：`+ path.sep` 没有测试守。** 我的判据 `abs.startsWith(slugDirAbs + path.sep)` 是对的，但把 `+ path.sep` 去掉后**没有任何测试失败**——`public/images/ab/x.png` 会因字符串前缀相同被当成 slug `a` 的附件（和上一轮那个 `.` 是同一类差一字符的错误，只是方向不同）。已在附件测试里补两条负例：兄弟前缀文件 `public/images/ab/x.png`（反向断言它**必须存活**）与附件目录自身 `public/images/a`，警告数 3 → 5。
+    - **CLI 尾部胶水补上覆盖。** 那 6 行（`import.meta.url` 判定 + 分派 + 退出码 2）此前没有测试，而它是用户实际敲的命令的入口。补一条 `spawnSync(process.execPath, [cli, '--force'])`，四条断言：退出码 2、`stdout` 为空（错误只走 stderr，否则会污染 `pnpm sync | ...` 的管道）、stderr 命中 `未知参数 --force`、stderr 命中用法行。只测未知参数这一支——成功支会真去读 `/home/minus/Wiki`，不能进测试；`--force` 在 `parseArgs` 即返回错误，走不到 `makeConfig`，所以这条与 vault 是否存在无关。
+    - **软链残余记录写反了，已按实测改正。** 第 10 条留下的残余原写成「`fs.rmSync` 会顺着软链删掉外部目标」，与事实相反（实测：`rmSync` 对软链一律只 unlink 链接本身，`recursive` 删目录时也不跟随，外部目标全部幸存）；真正的残余在**拷贝侧**——`public/images/<slug>/` 本身是软链时 `mkdirSync` + `copyFileSync` 会写穿它。详见上一条。
+    - **`entry.outputHash` 的直接访问是刻意的，不改成 `?.`。** 我原本打算按「消除隐式耦合」加 `?.`，被复审否掉，理由成立：该处 `entry` 由前置守卫（`... && entry === null && ... → continue`）结构保证非空，`?.` 在**任何可达路径上都没有正当用途**；真出问题时它会把「结构被破坏」翻译成一条**静默假警告**「生成文件被手工改过」，而直接访问会当场 `TypeError` 让测试变红——「响亮地崩」优于「静默地说谎」，与本轮刚修掉的 `type === 'skip'` 假警报同类。注意 `safeRecordedImages(config, slug, entry?.images, …)` 那处的 `?.` 是**必要**的：create 路径下 `entry` 合法为 null，两处不是一回事。
+    - **复审给出的四条「文案/取值未被断言」缺口（L6/L7/L14/N14），记录不修**——都不涉内容丢失，补它们要断言用户可见文案的逐字内容，收益不抵脆性：
+      - **L6** `sync.mjs` 删除动作块 `sourceRel: entry.source,` → `sourceRel: null,`：**报告行未被断言**。`sourceRel` 是活字段（`formatReport` 的 `row()` 对四类行统一打印 `← ${entry.sourceRel}`），但现有报告类测试只断言条数/标记（`⚠️ 警告 N`、`（试运行…）`、`✅`），没有一条断言任何一行 `← …` 的内容。
+      - **L7** `sync.mjs` `const result = summarize(plan, dryRun);` → `summarize(plan, false);`：**取值未被断言**。`result.dryRun` 唯一消费者是 `formatReport` 的「（试运行，未写入任何文件）」前缀；干跑测试断言的是「不写盘、不拷图、不建 manifest」，那由**另一条语句** `if (dryRun) return result;` 保证（上一轮 R1 变异已击杀的是后者）。
+      - **L14** `sync.mjs` 陈旧哈希跳过删除的 warning 尾部 `` `确认无需保留后删掉该文件即可，下次同步会自动清理 ${config.manifestPath} 里对应的条目` `` → `` `已跳过删除` ``：**文案未被断言**。哈希不符的测试只断言「有警告」，不断言那句可操作指引。
+      - **N14** `sync.mjs` 非法键报错的第二段 `` `它可能是手工编辑或合并冲突留下的，请从 ${config.manifestPath} 中移除该条。` `` → `` `` ``：**文案未被断言**。非法键测试断言的是「报错 + 受害者存活」，不断言指引（错误消息本身仍在，丢的是可操作提示）。
+    - **G2（成功支分派）未覆盖，记录在案**：`sync-obsidian.mjs` 的 `else` 分支 `process.exitCode = main(makeConfig(), { dryRun });` 改成 `= 0` 时，本轮新加的 spawn 测试**杀不掉**（`--force` 走 error 支，永远进不了 `else`）。不补的理由：该分支未覆盖的只剩「进程层把返回值接到 exitCode」这半行，而 `main` 的返回码语义（有错 1、仅警告 0）已由单测覆盖；要真覆盖只能 spawn 一条成功路径，而 `makeConfig()` 的 `vaultDir` 默认硬编码 `/home/minus/Wiki`（`config.mjs:12`，无环境变量覆盖口），成功支必然去读真实 vault，在 CI 里会变成 flaky。**不要用 `--dry-run` 去凑成功支**——同样会因为读不到该目录而随机失败。
+      - 本轮已确认被新 spawn 测试钉死的三格：G1 退出码（`process.exitCode = 2` → 其它值）、G3 直接执行判定（`import.meta.url === pathToFileURL(...)` → `false`）、G4 stderr 输出（去掉 `process.stderr.write`）。
+    - **本轮变异矩阵实测（`/tmp/round5/mutate.py`，基线 121 全绿）**：21 条应被杀的变异**全部被杀**（含本轮新增的 C1f 丢掉 `+ path.sep`、K1 退出码、K2 stderr、G3 直接执行判定），5 条缺口变异**全部如预期存活**（L6/L7/L14/N14/G2）。缺口清单不是照抄复审的说法——矩阵里把它们单列成「预期存活」一组，跑出来与记录不符就会报「缺口记录已过期」。
 
 ### Task 7: 博客侧放宽内容集合与可选摘要
 

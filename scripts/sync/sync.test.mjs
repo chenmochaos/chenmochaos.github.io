@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { makeConfig } from './config.mjs';
 import { planSync, runSync, formatReport } from './sync.mjs';
 import { main, parseArgs } from '../sync-obsidian.mjs';
@@ -480,23 +481,33 @@ test('清单里不合 slug 形态的键不参与删除，仓库外的目录不�
 // 键之外，清单的**值**同样不可信：entry.images 里的路径会被 applySync 直接喂给 fs.rmSync。
 // 判据是「必须在该 slug 自己的附件目录内」，不是较松的「在仓库内」：后者会放行仓库里的任意文件，
 // 也会让指向仓库根自身（`.`）的条目穿过检查，把目录递给 rmSync 并抛 EISDIR 把整次同步打断。
+// 判据末尾那个 `+ path.sep` 也是判据本身的一部分：去掉它，`public/images/ab/x.png` 会因字符串前缀
+// 相同而被当成 slug `a` 的附件（下面两条反向断言专钉这一格——它和 `.` 那条是同一类差一字符的错误）。
 test('清单里记录的图片路径不在该 slug 的附件目录内时忽略，不会删到仓库里的其他文件', () => {
   const { root, config, repoRoot } = makeFixture(
     { 'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n' },
-    { 'src/components/Hero.astro': '<div />\n' }
+    { 'src/components/Hero.astro': '<div />\n', 'public/images/ab/x.png': PNG }
   );
   runSync(config);
   fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件
 
   const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
-  manifest.entries.a.images = ['../outside.png', 'src/components/Hero.astro', '.', 42];
+  manifest.entries.a.images = [
+    '../outside.png',
+    'src/components/Hero.astro',
+    '.',
+    42,
+    'public/images/ab/x.png', // 兄弟前缀：与 public/images/a 只差一个分隔符
+    'public/images/a', // 附件目录自身：放行它会把目录递给 rmSync 并抛 EISDIR
+  ];
   fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
 
   const result = runSync(config);
 
-  assert.equal(result.warnings.filter((w) => /不在它的附件目录内/.test(w)).length, 3);
+  assert.equal(result.warnings.filter((w) => /不在它的附件目录内/.test(w)).length, 5);
   assert.ok(fs.existsSync(path.join(root, 'outside.png')));
   assert.ok(fs.existsSync(path.join(repoRoot, 'src/components/Hero.astro')));
+  assert.ok(fs.existsSync(path.join(repoRoot, 'public/images/ab/x.png'))); // 兄弟前缀目录里的文件必须活着
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -613,4 +624,18 @@ test('清单里的哈希对不上、但文件内容与生成的一致时，不�
   assert.equal(result.skipped.length, 1);
   assert.deepEqual(result.warnings, []);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// CLI 尾部那几行胶水（`import.meta.url` 判定 + 分派 + 退出码 2）只有真起子进程才覆盖得到：
+// 它是用户实际敲的那条命令的入口，`parseArgs` 与 `main` 各自有测试并不代表这段接线是对的。
+// 只测未知参数这一支——成功支会真的去读 /home/minus/Wiki（DEFAULT_CONFIG 的 vaultDir），不能进测试；
+// `--force` 在 parseArgs 就返回错误，走不到 makeConfig，因此这条对 vault 是否存在不敏感。
+test('命令行入口：未知参数打印用法并以退出码 2 结束', () => {
+  const cli = path.join(import.meta.dirname, '..', 'sync-obsidian.mjs');
+  const { status, stdout, stderr } = spawnSync(process.execPath, [cli, '--force'], { encoding: 'utf8' });
+
+  assert.equal(status, 2);
+  assert.equal(stdout, ''); // 错误只走 stderr：stdout 有内容会污染 `pnpm sync | ...` 的管道
+  assert.match(stderr, /未知参数 --force/);
+  assert.match(stderr, /pnpm sync \[--dry\|--dry-run\]/);
 });
