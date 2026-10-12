@@ -42,9 +42,9 @@ GitHub Actions → https://chenmochaos.github.io/
 
 ## 4. 组件
 
-### 4.1 `scripts/sync-obsidian.mjs`
+### 4.1 `scripts/sync-obsidian.mjs`（入口）+ `scripts/sync/*.mjs`（实现）
 
-零业务依赖（仅用 `node:fs` / `node:path` / `node:crypto` + `gray-matter` 解析 frontmatter），配置常量集中在文件顶部：
+入口只做编排，实现拆进 `scripts/sync/`：`config.mjs`、`slug.mjs`、`note.mjs`、`transform.mjs`、`vault.mjs`、`manifest.mjs`、`sync.mjs`，每个模块配同名 `*.test.mjs`（`node --test` 发现，无需配置）。依赖只有两个 devDependency：`js-yaml` 解析 frontmatter、`github-slugger` 生成与 Astro 产物一致的标题锚点（Astro 的 `rehype-collect-headings` 用的就是这个库）。配置常量集中在 `config.mjs`：
 
 ```js
 const CONFIG = {
@@ -103,19 +103,23 @@ slug 冲突（两篇笔记解析出同一 slug）：两篇都跳过并报错，�
 
 ## 6. 正文转换规则
 
-**前置**：所有替换必须先按 fenced code block（` ``` ` / `~~~`）与行内代码（反引号）分段，代码内容原样保留、绝不替换。
+**前置**：所有替换必须先按 fenced code block（` ``` ` / `~~~`）与行内代码（反引号）分段，代码内容原样保留、绝不替换。围栏识别容忍任意缩进与 `>` 前缀——列表项里的代码块缩进 4 空格以上、callout 里的代码块每行带 `> `，两者按 CommonMark 的解释都是代码；漏认的代价是改写代码，多认的代价只是少转换几个链接，两者不对称，一律偏保守。正文入口先做 CRLF→LF 归一化，产物统一为 LF。已知限制：整行是 callout 标记的跨行行内代码片段仍会被改写（先切行内代码会破坏 callout 的整行判定）。
 
 链接解析依赖一张全局表：所有 `publish: true` 笔记的 `笔记名 → slug`（包含本次未变更、已发布过的笔记），因此指向已发布文章的内链能稳定解析。
 
 | Obsidian 语法 | 输出 | 备注 |
 |---|---|---|
-| `![[图.png]]`、`![[图.png\|300]]` | 附件拷到 `public/images/<slug>/图.png`，改写为 `![图](/images/<slug>/图.png)`（URL 做 percent-encoding） | `\|300` 尺寸语法忽略；同名附件重复引用只拷一次；附件找不到则保留原文并记警告 |
-| `[[笔记]]`、`[[笔记\|别名]]` | 目标在全局表中：`[别名或目标标题](/posts/<slug>)` | 别名缺失时用目标笔记的 `title` |
-| `[[笔记#小节]]`、`[[笔记#小节\|别名]]` | `[别名或标题](/posts/<slug>#小节)` | 锚点小节名按原文本输出 |
+| `![[图.png]]`、`![[图.png\|300]]` | 附件拷到 `public/images/<slug>/图.png`，改写为 `![图](/images/<slug>/图.png)`（URL 做 percent-encoding） | `\|300` 尺寸语法忽略；同名附件重复引用只拷一次；表格内的竖线转义按普通竖线处理（见本节末说明）；**找不到** → 保留原文并记「无法解析嵌入引用」；**存在但不是图片**（pdf 等）→ 保留原文并记「不支持的附件」——两者必须区分，否则用户会去查一个根本没丢的文件 |
+| `[[笔记]]`、`[[笔记\|别名]]` | 目标在全局表中：`[别名或目标标题](/posts/<slug>)` | 别名缺失时用目标笔记的 `title`；别名为空串时同样回退到 `title`（空串不是 nullish，用 `??` 会产出渲染上不可见的空链接）；表格内 Obsidian 自动写成的竖线转义同样按普通竖线处理（见本节末说明） |
+| `[[笔记#小节]]`、`[[笔记#小节\|别名]]` | `[别名或标题](/posts/<slug>#小节)` | 锚点用与 Astro 产物 id 相同的 `github-slugger` 生成，除同名标题外与产物 id 完全一致；同名标题指第一处（Obsidian 的锚点语法本就无法区分重名） |
 | `[[笔记^块引用]]` | 去掉 `^...` 后同上处理 | |
-| `[[未发布笔记]]` | 降级为纯文本：`别名 ?? 目标名` | 不产生死链，同时在报告中列出 |
+| `[[#小节]]` | `[小节或别名](#小节)` | 本笔记内的标题链接，生成页内锚点；`[[ ]]`、`[[]]` 这类空目标解析不到时保留原文，绝不删成空文本 |
+| `![[笔记]]`、`![[笔记#小节]]` | 降级为 `[标题](/posts/<slug>)`（带锚点） | 笔记嵌入（transclusion）在博客里没有内联展开的形态，降级为链接并记警告「笔记嵌入不支持，已降级为链接」 |
+| `[[未发布笔记]]` | 降级为纯文本：`别名 ?? 目标名` | 不产生死链，同时在报告中列出；标签为空时退回原文而不是输出空文本 |
 | `> [!note] 标题` | `> **标题**` | 8 处 callout；类型标记丢弃，无标题的标记行整行删除 |
 | `%%注释%%`、`==高亮==` | 不做转换 | 在报告中列为警告，提示人工处理 |
+
+> **竖线的两种写法**：Obsidian 用竖线分隔「目标」与「别名」。写进 Markdown 表格时，Obsidian 会自动把它转义成反斜杠 + 竖线（`[[笔记\|别名]]`），而 `[[笔记|别名]]` 在表格里会把单元格切断。读回时两种写法一律等同处理——表格里的内链，用户没法不这样写。
 
 **产物格式为 `.md`（不是 `.mdx`）**：`.mdx` 会按 JSX 解析，Obsidian 正文里常见的 `<` 、`{` 会让构建直接失败；`.md` 走纯 Markdown 管道无此风险，且更贴近 Obsidian 原文。需要组件能力的手写文章继续用 `.mdx`。
 
@@ -158,10 +162,12 @@ manifest 结构：
   - 删除  old-post.md            ← 源已取消 publish
 ⚠️ 警告 2
   - 未解析内链 [[未发布笔记]] @ STX/AI/how-to-learn.md
-  - 缺失附件 ![[x.png]] @ STX/散文/y.md
+  - 无法解析嵌入引用 ![[x.png]] @ STX/散文/y.md
 ❌ 错误 1
   - STX/AI/未命名.md：文件名无法生成 slug，请在笔记中填写 slug 属性
 ```
+
+同一条警告重复出现时折叠成一行并在行尾标出次数（`（×100）`），但 `⚠️ 警告 N` 里的 N 仍是实际条数：一行里的上百个相同内链不该把报告刷满。
 
 退出码：有错误时非 0（便于日后接入 pre-commit 或 CI 校验）；仅有警告时为 0。
 
@@ -176,7 +182,7 @@ manifest 结构：
 | `src/layouts/PostLayout.astro` | `.prose-custom` 补齐表格、h4/h5/h6、任务列表、嵌套列表样式 | 见 §9.1 |
 | `src/pages/posts/[...slug].astro` | 透传 `post.data.description`（可为 `undefined`） | 同上 |
 | `src/layouts/BaseLayout.astro` | 不改 | 已有 `description = 'Personal blog & digital garden'` 兜底，`undefined` 不会渲染成字符串 "undefined" |
-| `package.json` | 加 `"sync": "node scripts/sync-obsidian.mjs"`；devDependency 加 `gray-matter` | 入口与 YAML 解析 |
+| `package.json` | 加 `"sync": "node scripts/sync-obsidian.mjs"`；devDependency 加 `js-yaml`、`github-slugger` | 入口与 YAML 解析、锚点 |
 | `CLAUDE.md` | 新增「内容同步」章节：同步命令、生成文件禁止手改、模板字段约定、`.md` 与 `.mdx` 的分工 | 约束先行，规则进文档 |
 | `STX/zz_Templates/Blog-Article.md` | 新建模板 | 用户要求 |
 
@@ -201,6 +207,7 @@ Vault 中实际使用但博客样式表未覆盖的元素统计：表格 11 篇�
 - 自动 `git commit` / `git push`
 - `![[图|300]]` 的尺寸渲染（仅忽略尺寸标记）
 - callout 的类型化样式（仅去除标记保留引用块）
+- 笔记嵌入（`![[笔记]]`）的内联展开（仅降级为链接）
 - 监听文件变化的常驻 watch 进程
 - 图片压缩与 Git LFS
 
@@ -230,3 +237,4 @@ Vault 中实际使用但博客样式表未覆盖的元素统计：表格 11 篇�
 | vault 路径硬编码 | 集中在 `CONFIG`，改一处即可；CI 不跑同步脚本，无影响 |
 | 内链目标未被标记发布时降级为纯文本 | 符合预期（用户要求），并在报告中列出以便补 `publish` |
 | 部分 Obsidian 语法（`%%`、`==`）未转换 | 明确列为非目标，报告警告提示 |
+| 跨行行内代码片段里整行是 callout 标记时会被改写 | 形状罕见；先切行内代码会破坏 callout 的整行判定，取舍已记录在 `transform.mjs` 的注释里 |

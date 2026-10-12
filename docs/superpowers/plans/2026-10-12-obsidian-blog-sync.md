@@ -6,7 +6,7 @@
 
 **Architecture:** 一个纯本地的 Node 脚本把 vault 中标记发布的笔记转换成 `src/content/posts/<slug>.md` 与 `public/images/<slug>/*`，用 `.sync-manifest.json` 记录生成物以支持安全清理。脚本按职责拆成 6 个可独立测试的模块，纯函数全部用 Node 内置测试跑 TDD，编排层用临时 fixture（临时 vault + 临时 repo）做集成测试。博客侧同时放宽内容集合 glob 到 `{md,mdx}`、让 `description` 可选、补齐正文样式。
 
-**Tech Stack:** Node 24（`node:test`、`node:fs`、`node:crypto`）、`js-yaml`（唯一的 devDependency）、Astro 6 Content Collections（glob loader + Zod）、Tailwind CSS v4（CSS-first，设计变量在 `src/styles/global.css` 的 `@theme` 里）。
+**Tech Stack:** Node 24（`node:test`、`node:fs`、`node:crypto`）、`js-yaml` + `github-slugger`（两个 devDependency；后者与 Astro 生成标题 id 用的是同一个库）、Astro 6 Content Collections（glob loader + Zod）、Tailwind CSS v4（CSS-first，设计变量在 `src/styles/global.css` 的 `@theme` 里）。
 
 **Spec:** `docs/superpowers/specs/2026-10-12-obsidian-blog-sync-design.md`
 
@@ -638,9 +638,15 @@ git commit -m "feat(sync): add note parsing and frontmatter mapping"
 - Create: `scripts/sync/transform.test.mjs`
 - Create: `scripts/sync/transform.mjs`
 
+> **修订记录（2026-10-13）**：本任务在 `689ff32` 之后有一轮修复，来自代码质量审查与 spec 措辞订正。
+> 修复内容：围栏识别放宽到任意缩进与 `>` 前缀（列表项与 callout 里的代码块此前会被改写）、正文 CRLF→LF 归一化、
+> 分段不再产出空段、表格内的转义竖线 `\|` 按竖线处理、空别名回退目标标题、`[[#小节]]` 生成本页锚点、
+> 笔记嵌入降级为链接、附件三态（缺失/不支持）区分、警告内嵌内容截断、`headingAnchor` 改用 `github-slugger`。
+> 修复轮按修正后的代码与测试为准，提交信息用 `fix(sync): ...`，不要沿用下面的原提交信息。
+
 - [ ] **Step 1: 写失败的测试**
 
-创建 `scripts/sync/transform.test.mjs`：
+先 `pnpm add -D github-slugger`：`headingAnchor` 必须与 Astro 产物 id 一致，就得用 Astro 用的同一个库（`@astrojs/markdown-remark/dist/rehype-collect-headings.js` 里 `new Slugger()` + `slugger.slug(text)`），手写近似在中文标点与 ★ 这类符号上必然偏离。然后创建 `scripts/sync/transform.test.mjs`：
 
 ```js
 import test from 'node:test';
@@ -654,12 +660,18 @@ import {
 } from './transform.mjs';
 
 /** 构造可控 ctx：图片与内链都按预设表解析，警告写进传入的数组。 */
-function makeCtx({ images = {}, links = {}, warnings = [], sourceRel = 'STX/test.md' } = {}) {
+function makeCtx({
+  images = {},
+  unsupported = [],
+  links = {},
+  warnings = [],
+  sourceRel = 'STX/test.md',
+} = {}) {
   return {
     urlPrefix: '/posts',
     sourceRel,
     warnings,
-    copyImage: (target) => images[target] ?? null,
+    copyImage: (target) => images[target] ?? (unsupported.includes(target) ? { unsupported: true } : null),
     resolveLink: (target) => links[target] ?? null,
   };
 }
@@ -683,6 +695,57 @@ test('波浪号围栏同样生效', () => {
   const body = ['~~~', '[[笔记]]', '~~~', '[[笔记]]'].join('\n');
   const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
   assert.equal(out.split('[目标文章]').length - 1, 1);
+});
+
+// 列表项里的代码块缩进 4 空格以上，按 `^ {0,3}` 认不出围栏，此前只能靠行内代码碰巧配对挡住改写
+test('缩进 4 空格以上的围栏同样受保护', () => {
+  const body = ['- 步骤', '', '    ```js', '    const s = `[[笔记]]`;', '    ```', '', '[[笔记]]'].join('\n');
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('const s = `[[笔记]]`;'));
+  assert.equal(out.split('[目标文章]').length - 1, 1);
+});
+
+// callout 里包代码块时每行带 `> ` 前缀，此前完全认不出围栏，代码里的内链会被改写成超链接。
+// 代码内容里必须含反引号：不含时两个围栏行会被 splitInlineCode 凑成一对行内代码，
+// 白捡一层保护，测试就成了假阳性（在旧实现上照样通过）。
+test('块引用前缀的围栏同样受保护', () => {
+  const body = ['> ```js', '> const s = `[[笔记]]`;', '> ```', '', '[[笔记]]'].join('\n');
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('const s = `[[笔记]]`;'));
+  assert.equal(out.split('[目标文章]').length - 1, 1);
+});
+
+// CRLF 会让围栏标记行与 callout 行整行匹配不上：围栏失效导致代码被改写，callout 全篇静默不转换
+test('CRLF 正文的围栏与 callout 仍正常处理', () => {
+  const body = '> [!note] 标题\r\n> 正文\r\n\r\n```\r\n[[笔记]]\r\n```\r\n\r\n[[笔记]]';
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.startsWith('> **标题**\n> 正文\n\n```'));
+  assert.ok(out.includes('```\n[[笔记]]\n```'));
+  assert.equal(out.includes('\r'), false);
+  assert.equal(out.split('[目标文章]').length - 1, 1);
+});
+
+test('splitByCodeFence 只产出有内容的分段，拼接回来与输入逐字节相同', () => {
+  assert.deepEqual(splitByCodeFence('a\n```\nb\n```\nc'), [
+    { isCode: false, text: 'a' },
+    { isCode: true, text: '```\nb\n```' },
+    { isCode: false, text: 'c' },
+  ]);
+  assert.deepEqual(splitByCodeFence(''), [{ isCode: false, text: '' }]);
+  // 相邻围栏之间曾凭空多出一个空段，join 后就是输入里没有的空行
+  const adjacent = '```\na\n```\n```\nb\n```';
+  assert.deepEqual(splitByCodeFence(adjacent), [
+    { isCode: true, text: '```\na\n```' },
+    { isCode: true, text: '```\nb\n```' },
+  ]);
+  for (const body of [adjacent, '```\na\n````\n\n~~~\nb\n~~~\n', 'a\n~~~\nb\n~~~']) {
+    assert.equal(
+      splitByCodeFence(body)
+        .map((part) => part.text)
+        .join('\n'),
+      body,
+    );
+  }
 });
 
 test('行内代码不参与替换', () => {
@@ -711,12 +774,37 @@ test('图片嵌入带尺寸参数时忽略尺寸', () => {
   assert.equal(out, '![a](/images/post/a.png)');
 });
 
+// Obsidian 在表格里写内链会自动写成 `![[a.png\|300]]`，只找 '|' 会把目标读成「a.png\」
+test('表格里转义竖线的图片尺寸同样忽略', () => {
+  const out = transformBody('| a | ![[a.png\\|300]] |', makeCtx({ images: { 'a.png': okImage } }));
+  assert.ok(out.includes('![a](/images/post/a.png)'));
+});
+
 test('找不到附件时保留原文并记警告', () => {
   const warnings = [];
   const out = transformBody('![[missing.png]]', makeCtx({ warnings }));
   assert.equal(out, '![[missing.png]]');
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /缺失附件 !\[\[missing\.png\]\] @ STX\/test\.md/);
+  assert.match(warnings[0], /无法解析嵌入引用 !\[\[missing\.png\]\] @ STX\/test\.md/);
+});
+
+// 附件真实存在、只是不能内联时不能报「缺失」：那会让用户去查一个根本没丢的文件
+test('附件存在但不是图片时记「不支持」而不是「缺失」', () => {
+  const warnings = [];
+  const out = transformBody('![[doc.pdf]]', makeCtx({ unsupported: ['doc.pdf'], warnings }));
+  assert.equal(out, '![[doc.pdf]]');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /不支持的附件 !\[\[doc\.pdf\]\] @ STX\/test\.md/);
+});
+
+// 笔记嵌入（transclusion）在博客里没有内联展开的形态，此前按缺失附件处理：页面留字面量、报告报假警告
+test('笔记嵌入降级为链接并记警告', () => {
+  const warnings = [];
+  const out = transformBody('![[笔记#如何开始]]', makeCtx({ links: { 笔记: okLink }, warnings }));
+  assert.equal(out, '[目标文章](/posts/target-post#如何开始)');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /笔记嵌入不支持，已降级为链接 !\[\[笔记#如何开始\]\] @ STX\/test\.md/);
+  assert.equal(transformBody('![[笔记]]', makeCtx({ links: { 笔记: okLink } })), '[目标文章](/posts/target-post)');
 });
 
 test('指向已发布笔记的内链变成绝对链接', () => {
@@ -732,6 +820,40 @@ test('内链带别名时用别名作标签', () => {
 test('内链带小节时保留锚点', () => {
   const out = transformBody('[[笔记#如何开始]]', makeCtx({ links: { 笔记: okLink } }));
   assert.equal(out, '[目标文章](/posts/target-post#如何开始)');
+});
+
+// Obsidian 在表格里写内链会自动转义竖线，用户没法不这样写
+test('表格里转义竖线的内链按别名解析', () => {
+  const out = transformBody('| a | [[笔记\\|点这里]] |', makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('[点这里](/posts/target-post)'));
+});
+
+// 空字符串不是 nullish：用 ?? 会产出 []()——渲染上既点不到、也看不出内容丢了
+test('别名为空时回退到目标标题，不产出空标签链接', () => {
+  assert.equal(transformBody('[[笔记|]]', makeCtx({ links: { 笔记: okLink } })), '[目标文章](/posts/target-post)');
+  assert.equal(
+    transformBody('[[笔记|   ]]', makeCtx({ links: { 笔记: okLink } })),
+    '[目标文章](/posts/target-post)',
+  );
+});
+
+// [[#小节]] 是 Obsidian 的「本笔记标题」链接；此前目标为空会被解析失败并删成空文本
+test('同笔记标题链接生成本页锚点', () => {
+  assert.equal(transformBody('见 [[#如何开始]]。', makeCtx()), '见 [如何开始](#如何开始)。');
+  assert.equal(transformBody('见 [[#如何开始|上面]]。', makeCtx()), '见 [上面](#如何开始)。');
+  // 标签保留原文，锚点走与 Astro 产物 id 一致的 slug
+  assert.equal(
+    transformBody('[[#2.3 信道极限容量 ★★ 计算重点]]', makeCtx()),
+    '[2.3 信道极限容量 ★★ 计算重点](#23-信道极限容量--计算重点)',
+  );
+});
+
+test('目标为空且解析不到时保留原文而不是删成空', () => {
+  const warnings = [];
+  const out = transformBody('见 [[ ]] 和 [[|别名]]。', makeCtx({ warnings }));
+  assert.equal(out, '见 [[ ]] 和 别名。');
+  assert.equal(warnings.length, 2);
+  assert.ok(warnings.every((warning) => warning.includes('@ STX/test.md')));
 });
 
 test('内链带块引用标识时丢弃 ^ 部分', () => {
@@ -766,10 +888,13 @@ test('没有标题的 callout 只删掉标记行', () => {
   assert.equal(out, '> 正文');
 });
 
-test('headingAnchor 匹配 github-slugger 的常见行为', () => {
+test('headingAnchor 与 Astro 产物 id 一致', () => {
   assert.equal(headingAnchor('如何开始'), '如何开始');
   assert.equal(headingAnchor('Hello World'), 'hello-world');
   assert.equal(headingAnchor('Step 1: Setup!'), 'step-1-setup');
+  // 手写近似会把这两条里的标点与 ★ 留在锚点里，而产物 id 会剔除它们
+  assert.equal(headingAnchor('2.3 信道极限容量 ★★ 计算重点'), '23-信道极限容量--计算重点');
+  assert.equal(headingAnchor('中文，标点。测试！'), '中文标点测试');
 });
 
 test('图片与内链互不误伤（![[ 不被当内链）', () => {
@@ -792,6 +917,14 @@ test('detectUnsupportedSyntax 忽略代码块里的同类字符', () => {
 test('detectUnsupportedSyntax 对干净正文返回空数组', () => {
   assert.deepEqual(detectUnsupportedSyntax('普通正文 [[链接]]', 'STX/a.md'), []);
 });
+
+// 一个忘了闭合的 `==` 会把其后整段正文吞进警告，报告是给人读的
+test('detectUnsupportedSyntax 截断超长的命中内容', () => {
+  const [warning] = detectUnsupportedSyntax(`==${'x'.repeat(100000)}==`, 'STX/a.md');
+  assert.ok(warning.length < 200, `警告长度 ${warning.length}`);
+  assert.match(warning, /==高亮==/);
+  assert.match(warning, /@ STX\/a\.md$/);
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -804,11 +937,28 @@ Expected: FAIL —— `Cannot find module './transform.mjs'`
 创建 `scripts/sync/transform.mjs`：
 
 ```js
+import { slug } from 'github-slugger'; // 与 Astro 的标题 id 同一实现（rehype-collect-headings.js 用的就是这个库）
+import { truncate } from './note.mjs';
+
 const EMBED_RE = /!\[\[([^\]\n]+?)\]\]/g;
 const WIKILINK_RE = /(?<!!)\[\[([^\]\n]+?)\]\]/g;
 const CALLOUT_RE = /^(\s{0,3}>[ \t]?)\[!([A-Za-z-]+)\][+-]?[ \t]*(.*)$/;
 
-/** 按代码围栏切分，代码段标记 isCode:true，后续不做任何替换。 */
+/**
+ * 按代码围栏切分，代码段标记 isCode:true，后续不做任何替换。
+ *
+ * 三处刻意的宽松与归一化，都为了堵住「绝不改写代码」这条绝对前提上的破口：
+ * - 围栏允许任意缩进与块引用前缀。列表项里的代码块缩进 4 空格以上、callout 里的代码块每行带 `> `，
+ *   按 CommonMark 两种解释下内容都是代码，但 `^ {0,3}` 一个都认不出，只能靠行内代码**碰巧**配对
+ *   挡住替换——代码里一旦含反引号就漏。收紧的代价是「少转换几个链接」，漏认的代价是「改写代码」，
+ *   两者不对称，一律往多认的方向偏。
+ * - 空 buffer 不产生分段。否则相邻围栏之间会凭空多出一个空段，join 后就是输入里没有的空行。
+ * - 输入先做 CRLF→LF 归一化（本模块唯一的归一化点）：围栏标记行与 callout 行都按 '\n' 切分并用
+ *   `$` 收尾，行尾的 \r 会让它们整行都匹配不上，于是围栏失效、callout 全篇静默不转换。
+ *
+ * 已知限制：整行是 callout 标记的跨行行内代码片段仍会被 convertCallouts 改写——先切行内代码会破坏
+ * callout 的整行判定，两害相权取其轻。
+ */
 export function splitByCodeFence(body) {
   const parts = [];
   let buffer = [];
@@ -816,12 +966,13 @@ export function splitByCodeFence(body) {
   let fenceLength = 0;
 
   const flush = (isCode) => {
+    if (buffer.length === 0) return; // 空段只会在 join 时凭空插入一个换行
     parts.push({ isCode, text: buffer.join('\n') });
     buffer = [];
   };
 
-  for (const line of body.split('\n')) {
-    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+  for (const line of body.replace(/\r\n/g, '\n').split('\n')) {
+    const marker = line.match(/^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})(.*)$/);
 
     if (fenceChar === null) {
       if (marker) {
@@ -854,47 +1005,74 @@ export function splitInlineCode(text) {
   }));
 }
 
-/** 近似 github-slugger 的标题锚点算法。 */
+/**
+ * 标题锚点。直接用 Astro 用的同一个库，不再手写近似：手写版会把中文标点与 ★ 之类的符号留在锚点里，
+ * 而 Astro 产物 id 会把它们剔除，`[[笔记#2.3 信道极限容量 ★★ 计算重点]]` 于是指向一个不存在的锚点，
+ * 点击后静默停在页首。除同名标题外（Obsidian 的锚点语法本就无法区分重名），与产物 id 完全一致。
+ */
 export function headingAnchor(heading) {
-  return heading
-    .trim()
-    .toLowerCase()
-    .replace(/[ -⁯⸀-⹿\\'!"#$%&()*+,./:;<=>?@[\]^`{|}~]/g, '')
-    .replace(/\s+/g, '-');
+  return slug(heading);
 }
 
-function stripCalloutMarkers(text) {
-  const kept = [];
+function convertCallouts(text) {
+  const lines = [];
   for (const line of text.split('\n')) {
     const marker = line.match(CALLOUT_RE);
     if (!marker) {
-      kept.push(line);
+      lines.push(line);
       continue;
     }
     const [, prefix, , title] = marker;
     if (title.trim() === '') continue; // 只有标记的行整行丢弃
-    kept.push(`${prefix}**${title.trim()}**`);
+    lines.push(`${prefix}**${title.trim()}**`);
   }
-  return kept.join('\n');
+  return lines.join('\n');
+}
+
+/**
+ * 按第一个竖线拆分。竖线前允许有一个反斜杠：Obsidian 在表格里写内链时会自动转义成 `[[笔记\|别名]]`，
+ * 只找 '|' 会把目标读成「笔记\」，而表格里的内链用户没法不这样写。
+ */
+function splitOnPipe(inner) {
+  const match = inner.match(/\\?\|/);
+  if (!match) return { head: inner, tail: null };
+  return { head: inner.slice(0, match.index), tail: inner.slice(match.index + match[0].length) };
 }
 
 function replaceEmbeds(text, ctx) {
   return text.replace(EMBED_RE, (full, inner) => {
-    const target = inner.split('|')[0].split('#')[0].trim();
+    const { head } = splitOnPipe(inner);
+    const target = head.split('#')[0].trim();
     const image = ctx.copyImage(target);
-    if (!image) {
-      ctx.warnings.push(`缺失附件 ![[${target}]] @ ${ctx.sourceRel}`);
+
+    if (image && image.url) return `![${image.alt}](${image.url})`;
+    if (image && image.unsupported) {
+      // 文件确实存在，只是不是能内联的图片类型——不能报「缺失」，那会让用户去查一个没丢的文件
+      ctx.warnings.push(`不支持的附件 ${full} @ ${ctx.sourceRel}`);
       return full;
     }
-    return `![${image.alt}](${image.url})`;
+
+    // 不是附件：笔记嵌入（![[笔记]] / ![[笔记#小节]]）在博客里没有内联展开的形态，降级为普通链接，
+    // 比留下字面量 ![[...]] 或谎报「缺失附件」都更接近用户意图。
+    const note = ctx.resolveLink(target);
+    if (note) {
+      const hashIndex = head.indexOf('#');
+      const heading = hashIndex === -1 ? null : head.slice(hashIndex + 1).trim();
+      const anchor = heading ? `#${headingAnchor(heading)}` : '';
+      ctx.warnings.push(`笔记嵌入不支持，已降级为链接 ${full} @ ${ctx.sourceRel}`);
+      return `[${note.title || target}](${ctx.urlPrefix}/${note.slug}${anchor})`;
+    }
+
+    ctx.warnings.push(`无法解析嵌入引用 ${full} @ ${ctx.sourceRel}`);
+    return full;
   });
 }
 
 function replaceWikilinks(text, ctx) {
   return text.replace(WIKILINK_RE, (full, inner) => {
-    const pipeIndex = inner.indexOf('|');
-    const alias = pipeIndex === -1 ? null : inner.slice(pipeIndex + 1).trim();
-    let target = (pipeIndex === -1 ? inner : inner.slice(0, pipeIndex)).trim();
+    const { head, tail } = splitOnPipe(inner);
+    const alias = tail === null ? null : tail.trim();
+    let target = head.trim();
 
     const hashIndex = target.indexOf('#');
     const heading = hashIndex === -1 ? null : target.slice(hashIndex + 1).trim();
@@ -903,13 +1081,22 @@ function replaceWikilinks(text, ctx) {
     const caretIndex = target.indexOf('^');
     if (caretIndex !== -1) target = target.slice(0, caretIndex).trim();
 
-    const resolved = ctx.resolveLink(target);
-    if (!resolved) {
-      ctx.warnings.push(`未解析内链 [[${target}]] @ ${ctx.sourceRel}`);
-      return alias ?? target.split('/').pop();
+    // [[#小节]] 是 Obsidian 的「本笔记标题」链接。本笔记的 slug 不在 ctx 里，
+    // 但页内锚点 id 就是 headingAnchor(heading)，不必知道 slug 也能写对。
+    if (target === '' && heading !== null) {
+      return `[${alias || heading}](#${headingAnchor(heading)})`;
     }
 
-    const label = alias ?? resolved.title ?? target;
+    const resolved = ctx.resolveLink(target);
+    if (!resolved) {
+      ctx.warnings.push(`未解析内链 ${full} @ ${ctx.sourceRel}`);
+      // 标签为空时不能产出 []()：渲染上既点不到、也看不出内容丢了。退回原文。
+      const label = alias || target.split('/').pop();
+      return label === '' ? full : label;
+    }
+
+    // 用 || 不用 ??：空字符串不是 nullish，`[[笔记|]]` 会产出渲染上不可见的空链接
+    const label = alias || resolved.title || target;
     const anchor = heading ? `#${headingAnchor(heading)}` : '';
     return `[${label}](${ctx.urlPrefix}/${resolved.slug}${anchor})`;
   });
@@ -917,15 +1104,19 @@ function replaceWikilinks(text, ctx) {
 
 /**
  * 正文转换主入口。
- * ctx: { urlPrefix, sourceRel, warnings, copyImage(target) -> {url, alt}|null, resolveLink(target) -> {slug, title}|null }
- * 图片缺失与内链未解析的警告由本模块写入 ctx.warnings，同步层负责汇总。
+ * ctx: { urlPrefix, sourceRel, warnings,
+ *        copyImage(target) -> {url, alt} | {unsupported: true} | null,
+ *        resolveLink(target) -> {slug, title}|null }
+ * 三态契约的分工：「找不到」与「找到但不支持」必须可区分，否则报告会对一个真实存在的文件报「缺失」。
+ * 附件与内链的全部警告由本模块写入 ctx.warnings（resolver 只解析、不发声），同步层负责汇总与去重。
  * 本函数是纯文本变换：不读文件、不写文件、不拷贝（拷贝由 ctx.copyImage 的实现委托给调用方）。
+ * 输出为 LF 换行：输入的 CRLF 在切分时已归一化。
  */
 export function transformBody(body, ctx) {
   return splitByCodeFence(body)
     .map((part) => {
       if (part.isCode) return part.text;
-      const withCallouts = stripCalloutMarkers(part.text);
+      const withCallouts = convertCallouts(part.text);
       return splitInlineCode(withCallouts)
         .map((piece) => (piece.isCode ? piece.text : replaceWikilinks(replaceEmbeds(piece.text, ctx), ctx)))
         .join('');
@@ -938,14 +1129,17 @@ const UNSUPPORTED_PATTERNS = [
   { re: /==[^=]+==/, label: '==高亮==' },
 ];
 
-/** 检出本次不转换的 Obsidian 语法，供同步层列入报告。代码块内的同类字符不算。 */
+/**
+ * 检出本次不转换的 Obsidian 语法，供同步层列入报告。代码块内的同类字符不算。
+ * 命中内容截断到 40 字：一个忘了闭合的 `==` 会把其后整段正文吞进警告，报告要给人读。
+ */
 export function detectUnsupportedSyntax(body, sourceRel) {
   const warnings = [];
   for (const part of splitByCodeFence(body)) {
     if (part.isCode) continue;
     for (const { re, label } of UNSUPPORTED_PATTERNS) {
       const match = part.text.match(re);
-      if (match) warnings.push(`未转换语法 ${label}：「${match[0]}」 @ ${sourceRel}`);
+      if (match) warnings.push(`未转换语法 ${label}：「${truncate(match[0], 40)}」 @ ${sourceRel}`);
     }
   }
   return warnings;
@@ -955,7 +1149,7 @@ export function detectUnsupportedSyntax(body, sourceRel) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 37 + 22 = 59 项通过
+Expected: PASS —— 累计 37 + 34 = 71 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1144,7 +1338,7 @@ export function buildIndexes(scanned) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 59 + 6 = 65 项通过
+Expected: PASS —— 累计 71 + 6 = 77 项通过
 
 - [ ] **Step 6: 提交**
 
@@ -1263,7 +1457,7 @@ export function saveManifest(config, manifest) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 65 + 5 = 70 项通过
+Expected: PASS —— 累计 77 + 5 = 82 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1559,6 +1753,21 @@ test('formatReport 汇总各状态并逐条列出问题', () => {
   assert.match(report, /未解析内链/);
   assert.match(report, /填写 slug/);
 });
+
+test('formatReport 折叠重复出现的同一条警告', () => {
+  const report = formatReport({
+    dryRun: false,
+    created: [],
+    updated: [],
+    skipped: [],
+    deleted: [],
+    warnings: Array.from({ length: 3 }, () => '未解析内链 [[x]] @ STX/a.md'),
+    errors: [],
+  });
+  assert.match(report, /⚠️ 警告 3/);
+  assert.equal(report.split('未解析内链 [[x]]').length - 1, 1); // 只列一行
+  assert.match(report, /（×3）/);
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -1700,11 +1909,12 @@ export function planSync(config) {
       warnings: noteWarnings,
       copyImage: (target) => {
         const absPath = attachments.get(target.toLowerCase());
-        if (!absPath) return null; // 缺失警告由 transform 统一发出
+        if (!absPath) return null; // 找不到：警告由 transform 统一发出
         const extension = path.extname(absPath).toLowerCase();
         if (!config.imageExtensions.includes(extension)) {
-          noteWarnings.push(`非图片附件暂不支持 ![[${target}]] @ ${note.relPath}`);
-          return null;
+          // 存在但不支持内联，必须与「找不到」区分开：否则报告会对一个根本没丢的文件报「缺失」，
+          // 而用户会去查这个文件。警告仍由 transform 落成，resolver 只解析、不发声。
+          return { unsupported: true };
         }
         let planned = imagePlan.get(absPath);
         if (!planned) {
@@ -1878,13 +2088,20 @@ export function formatReport(result) {
   for (const entry of result.skipped) lines.push(row('= 跳过', entry));
   for (const entry of result.deleted) lines.push(row('- 删除', entry));
 
+  // 一行里的上百个相同内链会产出上百条一模一样的警告，而报告是给人读的：折叠同一条并标出次数。
+  // 去重放在报告层而不是 transform：模块无法知道最终报告的形态，只管如实逐条上报。
+  const pushListed = (list) => {
+    const counted = new Map();
+    for (const item of list) counted.set(item, (counted.get(item) ?? 0) + 1);
+    for (const [item, count] of counted) lines.push(`  - ${item}${count > 1 ? `（×${count}）` : ''}`);
+  };
   if (result.warnings.length > 0) {
     lines.push(`⚠️ 警告 ${result.warnings.length}`);
-    for (const warning of result.warnings) lines.push(`  - ${warning}`);
+    pushListed(result.warnings);
   }
   if (result.errors.length > 0) {
     lines.push(`❌ 错误 ${result.errors.length}`);
-    for (const error of result.errors) lines.push(`  - ${error}`);
+    pushListed(result.errors);
   }
   if (result.errors.length === 0 && result.warnings.length === 0) {
     lines.push('✅ 无警告无错误');
@@ -1896,7 +2113,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 70 + 13 = 83 项通过
+Expected: PASS —— 累计 82 + 14 = 96 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
@@ -2214,9 +2431,11 @@ pnpm sync --dry    # 只预览，不写盘
 - 同步开关：笔记属性 `publish: true`
 - 必填属性：`slug`（英文小写短横线，决定 URL）、`pubDate`
 - 可选属性：`title`（缺省用文件名）、`description`（缺省用 `excerpt` 或正文首段；都取不到则该字段省略，列表页只显示标题）、`tags`
-- 内链 `[[已发布笔记]]` 转成博客超链接；指向未发布笔记的内链降级为纯文本并在报告中警告
+- 内链 `[[已发布笔记]]` 转成博客超链接（支持 `|别名`、`#小节`，锚点与 Astro 产物 id 一致）；指向未发布笔记的内链降级为纯文本并在报告中警告
 - 图片 `![[图.png]]` 拷进 `public/images/<slug>/`
-- 不支持：`%%注释%%`、`==高亮==`、图片尺寸语法 `![[图|300]]`、非图片附件
+- 表格里的转义竖线 `[[笔记\|别名]]` 与普通竖线等价（Obsidian 在表格内自动转义，用户无法避免）
+- 笔记嵌入 `![[笔记]]` / `![[笔记#小节]]` 降级为指向该文章的链接，不做内联展开
+- 不支持：`%%注释%%`、`==高亮==`、图片尺寸语法 `![[图|300]]`、非图片附件（报告里记「不支持的附件」，与「无法解析嵌入引用」区分开）
 - 生成物清单在 `.sync-manifest.json`，只有清单内的文件会被同步删除
 - 脚本不执行 git 命令，commit 与 push 始终手动
 ````
