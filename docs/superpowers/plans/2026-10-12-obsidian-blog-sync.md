@@ -180,16 +180,21 @@ test('显式 slug 的边界形式一律拒绝', () => {
   }
 });
 
-test('推导出的 slug 满足安全不变式：要么长度不足 2，要么形如 SLUG_RE', () => {
-  // 与模块内的 SLUG_RE 保持同一形态：该不变式保证 slug 拼进
-  // src/content/posts/<slug>.md 后不可能越出目录（无 `/`、无 `..`）。
-  const SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-  const inputs = ['A B', '已有--双横线', '---', '   ', 'a', 'MiXeD CaSe 123', 'emoji 😀 name', '_'];
+test('推导出的 slug 满足安全不变式：要么长度不足 2，要么被 resolveSlug 原样接受', () => {
+  // 不要在这里抄一份 SLUG_RE 副本——副本会与实现漂移，且抄来的副本根本约束不到模块。
+  // 改用公开 API 反查：resolveSlug 只在 slug 形如 ^[a-z0-9]+(-[a-z0-9]+)*$ 时才接受，
+  // 因此"被接受"等价于"不含 `/`、不含 `.`、无可逃出 src/content/posts/ 的字符"。
+  const inputs = [
+    'A B', '已有--双横线', '---', '   ', 'a', 'MiXeD CaSe 123', 'emoji 😀 name', '_',
+    'a/b', 'a..b', '..', 'a.b', '.hidden', 'a/b/../c',
+  ];
   for (const input of inputs) {
     const derived = slugFromFilename(input);
-    assert.ok(
-      derived.length < 2 || SLUG_SHAPE.test(derived),
-      `「${input}」→「${derived}」不满足不变式`,
+    if (derived.length < 2) continue;
+    assert.deepEqual(
+      resolveSlug({ slugProperty: derived, basename: 'ignored' }),
+      { slug: derived, error: null },
+      `「${input}」→「${derived}」未被 resolveSlug 接受，说明产物 slug 不满足形态要求`,
     );
   }
 });
