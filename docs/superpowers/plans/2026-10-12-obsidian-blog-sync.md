@@ -2172,6 +2172,60 @@ test('命令行入口把 vault 根目录读取失败渲染成 ❌ 与退出码 1
   assert.equal(out, ''); // 没有报告：这次同步什么都没做
   assert.match(err, /❌ .*无法读取 vault 目录/);
 });
+
+// spec §7.1 的第二个合取项：可删的路径必须等于清单记录的路径。删除路径由 slug 反推，只在清单
+// 没被改坏时才相等；不相等说明清单与磁盘的对应关系已被破坏，宁可漏删一轮也不删错文件。
+test('清单记录的路径与推导出的路径不一致时跳过删除并报错', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')));
+
+  // 模拟清单被手工改过或合并解冲突出错
+  const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
+  manifest.entries.a.output = 'src/content/posts/somewhere-else.md';
+  fs.writeFileSync(config.manifestAbs, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+  // 取消发布让「a」成为待删项；此时仍有 1 篇 .md 被扫到，闸门 a 不会触发
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')), '路径对不上时不能删');
+  assert.ok(result.errors.some((error) => /不一致/.test(error)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 删除比覆盖更严。spec §7.4 已经承认「生成文件被手工改过」真实会发生（用户直接在博客侧编辑
+// 「已发布」的版本），覆盖有下一轮 vault 兜底，删除没有——静默销毁用户的改动不可逆。
+test('生成文件被手工改过后取消发布不会静默删除', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+
+  const generated = path.join(config.contentDirAbs, 'a.md');
+  fs.appendFileSync(generated, '\n我手写的一段补充\n', 'utf8');
+
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.match(fs.readFileSync(generated, 'utf8'), /我手写的一段补充/); // 改动还在
+  assert.ok(result.warnings.some((warning) => /手工改过/.test(warning)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -2421,11 +2475,37 @@ export function planSync(config) {
   } else {
     for (const slug of staleSlugs) {
       const entry = manifest.entries[slug];
+      const outputPath = path.join(config.contentDirAbs, `${slug}.md`);
+      const derived = toPosix(path.relative(config.repoRoot, outputPath));
+      const recorded = typeof entry.output === 'string' ? entry.output : '(清单里没有记录)';
+
+      // spec §7.1 的第二个合取项。删除路径本来是从 slug 反推的，只有在清单没被改坏时才等于
+      // entry.output；不相等说明清单与磁盘的对应关系已经被破坏（手工编辑、合并解冲突出错），
+      // 这时宁可漏删一轮，也不要删掉一个我们其实并不认识的同名文件。
+      if (derived !== recorded) {
+        errors.push(
+          `清单里「${slug}」记录的路径是 ${recorded}，与由 slug 推导出的 ${derived} 不一致，已跳过删除：` +
+            `清单可能被手工改过。确认后请手工删除该文件，并从 ${config.manifestPath} 里移除这一条。`,
+        );
+        continue;
+      }
+
+      // spec §7.4 的同胞条款。§7.4 承认「生成文件被手工改过」是真实会发生的事——用户可能直接
+      // 在博客侧编辑「已发布」的版本。覆盖有下一轮 vault 兜底，删除没有：把用户的改动静默销毁
+      // 不可逆。文件不存在不算「被改过」（生成物早被删了），照常生成动作把清单条目清掉。
+      if (fs.existsSync(outputPath) && hashText(fs.readFileSync(outputPath, 'utf8')) !== entry.outputHash) {
+        warnings.push(
+          `生成文件 ${slug}.md 被手工改过（内容哈希与清单记录不符），已跳过删除：` +
+            `确认无需保留后请手工删除该文件，并从 ${config.manifestPath} 里移除「${slug}」这一条`,
+        );
+        continue;
+      }
+
       actions.push({
         type: 'delete',
         slug,
         sourceRel: entry.source,
-        outputPath: path.join(config.contentDirAbs, `${slug}.md`),
+        outputPath,
         content: null,
         outputHash: null,
         images: [],
@@ -2552,7 +2632,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 92 + 17 = 109 项通过
+Expected: PASS —— 累计 92 + 19 = 111 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
@@ -2626,6 +2706,21 @@ Task 4 复审指出：本节的代码是 Task 4 那道「静默丢失」防线�
 - **slug 出错导致掉出 `finalNotes` 的笔记，其生成物会被当成本次不再发布而删除**：源笔记仍在、报错在报告里可见、修好后重新同步即恢复（vault 是唯一源），故不加第三道闸。若实际使用中觉得吵，再补「本次报错过的源不参与删除」。
 - **`toPosix` 与 vault.mjs 各一份**：1 行恒等变换，抽公共模块的收益低于它带来的间接层，等第三个调用方出现再说。
 ---
+
+- [ ] **Step 9: 修订（Task 6 spec 合规复审：删除侧的两道检查）**
+
+spec 合规复审判定 §7.1 的第二个合取项「文件路径等于 manifest 记录的路径」没有任何实现：删除路径由 `path.join(contentDirAbs, slug + '.md')` 反推（原计划 `:242`），`entry.output` 全仓零引用。核实属实，且实际风险比复审举的例子更近：
+
+- §7.4 专门为「生成文件被手工改过」写了警告——说明作者认为用户**真的会**直接在博客侧编辑「已发布」的版本。但那条保护只长在**覆盖**路径上，**删除**路径什么检查都没有：用户改完、再取消发布，他的改动被静默销毁，且删除不可逆（覆盖至少还有下一轮 vault 兜底）。
+- 只补「路径相等」是不够的：清单没被改坏时 `entry.output` 恒等于反推路径，这一条在日常流程里是恒真的。真正能挡住上面那个场景的是清单里**已经存着**的 `outputHash`。
+
+落地（两道都放在 `planSync` 的删除循环里，逐条 `continue`）：
+1. `derived !== recorded`（`entry.output` 缺失也算）→ push error 并跳过删除。清单与磁盘的对应关系已被破坏时，宁可漏删一轮。
+2. 文件存在且 `hashText(文件内容) !== entry.outputHash` → push warning 并跳过删除。文件不存在不算「被改过」（生成物早被删了），照常生成动作清掉清单条目，保住既有的 delete-noop 行为。
+3. 新增两项测试（路径不一致、手工改过后取消发布），测试数 17 → 19，累计 **111**。
+4. spec §7.1 与 §7.3 同步改（先改文档再改实践）。
+
+有意不修的残余：清单被改坏且**哈希恰好也对得上**时仍会删——但这要求攻击者同时构造路径与哈希，已超出「误操作」的范畴；此时用户还有 git。
 
 ### Task 7: 博客侧放宽内容集合与可选摘要
 
