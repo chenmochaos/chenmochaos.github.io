@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "test": "node --test \"scripts/sync/**/*.test.mjs\""
   },
   "keywords": [],
   "author": "",
@@ -18,5 +19,8 @@
     "@tailwindcss/vite": "^4.3.0",
     "astro": "^6.3.7",
     "tailwindcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "js-yaml": "^5.4.3"
   }
 }
