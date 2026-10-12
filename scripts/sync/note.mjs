@@ -119,7 +119,6 @@ export function hashText(text) {
   return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
 }
 
-/** YAML 双引号字符串，转义反斜杠与双引号。 */
 /**
  * 把任意值渲染成 YAML 双引号标量。
  * 直接借 JSON.stringify：JSON 字符串是合法的 YAML 1.2 双引号标量，会转义换行、制表、
