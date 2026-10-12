@@ -3133,7 +3133,7 @@ const blankAsAbsent = (schema) =>
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
   schema: z.object({
-    title: z.string(),
+    title: blankAsAbsent(z.string()),
     description: blankAsAbsent(z.string().optional()),
     pubDate: blankAsAbsent(z.coerce.date()),
     tags: blankAsAbsent(z.array(z.string()).optional()),
@@ -3150,7 +3150,8 @@ export const collections = { posts };
 `blankAsAbsent` 是这次复审抓到的真缺陷的修法，三处取值都要跟上：
 - **为什么必须归一化**：`description:` 后面留空是 YAML 的 `null`，`.optional()` 只接受 `undefined`、`.default()` 也只对 `undefined` 生效，于是最自然的「留空」写法会让 `astro build` 退出 1（`[InvalidContentEntryDataError] description: Expected type "string", received "object"`）。同步产物走不到这条路径（`note.mjs` 的 `pickDescription` 跳过非字符串、`buildOutput` 在 `undefined` 时整行不写），**只有手写文章会撞上**——而 Task 9 的模板恰恰把 `description` 留空给用户填。
 - **为什么不用 `.nullish()`**：它把 `null` 放行到页面层，`BaseLayout` 的 `description = 'Personal blog & digital garden'` 兜底只对 `undefined` 生效，结果是渲染出 **空的** `<meta name="description">`，比构建失败更隐蔽。
-- **为什么连 `pubDate` 也包**：`z.coerce.date()` 对 `null` 会 `new Date(null)` → `1970-01-01`，静默写错日期；包上之后空 `pubDate:` 直接报「必填」，把静默错误换成响亮失败。`tags`/`draft` 同属「空值 = null」这一类，一并归一。
+- **为什么连 `pubDate` 也包**：`z.coerce.date()` 对 `null` 会 `new Date(null)` → `1970-01-01`，静默写错日期；包上之后空 `pubDate:` 直接报错（实测报 `Expected type "date", received "object"`），把静默错误换成响亮失败。`tags`/`draft` 同属「空值 = null」这一类，一并归一。
+- **`title` 也包**（这一条是本轮由我追加的，超出复审原始发现）：`title: ""` 会作为空字符串通过，渲染出一个空的 `<h1>` 和列表里的空行——同一个「空值」类别的另一半。包上之后空标题直接报「必填」。
 
 - [ ] **Step 2: 列表页渲染摘要（缺失则不渲染）**
 
@@ -3218,7 +3219,7 @@ interface Props {
 - [ ] **Step 4: 验证构建与既有文章未受影响**
 
 Run: `pnpm build`
-Expected: 成功，且页面数 ≥ 5（首页 + 404 + 4 篇既有文章）。
+Expected: 成功，且页面数 ≥ 5（首页 + 4 篇既有文章；本项目**没有** 404 页面，`src/pages/` 下只有 `index.astro` 与 `posts/`）。
 
 Run: `git status --short src/content/posts`
 Expected: 无输出（既有 4 篇 `.mdx` 未被改动）。
@@ -3226,16 +3227,20 @@ Expected: 无输出（既有 4 篇 `.mdx` 未被改动）。
 **空值用例（YAML 空值 = `null`）**：这是上面那个 Critical 的直接复现，必须留一条可重跑的证据。在**隔离副本**里验——别把临时文章写进 `src/content/posts/`，那是正式文章目录，删不干净就会跟着一起发布：
 
 ```bash
-SITE=$(mktemp -d)
-tar -cf - -C /home/minus/Code/Full-Stack/Projects/Blog --exclude=node_modules --exclude=.git . | tar -xf - -C "$SITE"
-ln -s /home/minus/Code/Full-Stack/Projects/Blog/node_modules "$SITE/node_modules"   # 软链够用；跑不动就 cp -al（同设备）或 cp -r
+REPO=/home/minus/Code/Full-Stack/Projects/Blog
+# 副本必须与仓库**同设备**：下面用 cp -al 硬链 node_modules，跨设备会 Invalid cross-device link。
+# /tmp 是 tmpfs，放那里就只能软链 node_modules，而软链会让 Vite 的路径解析错乱（实测报找不到 ClientRouter.astro）。
+# 所以副本建在仓库的兄弟目录里。
+SITE=$(mktemp -d "${REPO%/Blog}/tmp.XXXX")
+tar -cf - -C "$REPO" --exclude=node_modules --exclude=.git . | tar -xf - -C "$SITE"
+cp -al "$REPO/node_modules" "$SITE/node_modules"
 cd "$SITE"
 
 # 三篇各留一个空值：任一没被归一化，这次构建就会失败，报错信息会指名是哪个字段
 printf -- '---\ntitle: 空摘要\npubDate: 2026-10-13\ndescription:\n---\n\n正文\n' > src/content/posts/blank-desc.md
 printf -- '---\ntitle: 空标签\npubDate: 2026-10-13\ntags:\n---\n\n正文\n'      > src/content/posts/blank-tags.md
 printf -- '---\ntitle: 空草稿\npubDate: 2026-10-13\ndraft:\n---\n\n正文\n'     > src/content/posts/blank-draft.md
-pnpm exec astro build; echo "exit=$?"
+./node_modules/.bin/astro build; echo "exit=$?"   # 不用 pnpm exec：node_modules 换成硬链目录后 pnpm 会想去重装依赖，无 TTY 时直接 abort
 grep -o '<meta name="description"[^>]*>' dist/posts/blank-desc/index.html
 ```
 
@@ -3245,13 +3250,13 @@ Expected: `exit=0`；`blank-desc` 的 meta 回落到站点默认描述（`Person
 
 ```bash
 # 反方向：schema 退回 description: z.string().optional()，同一批用例必须失败
-pnpm exec astro build; echo "exit=$?"        # Expected: exit=1 + [InvalidContentEntryDataError] description: Expected type "string", received "object"
+./node_modules/.bin/astro build; echo "exit=$?"        # Expected: exit=1 + [InvalidContentEntryDataError] description: Expected type "string", received "object"
 # 空 pubDate 必须响亮报错，而不是静默变成 1970-01-01
 printf -- '---\ntitle: 空日期\npubDate:\n---\n\n正文\n' > src/content/posts/blank-date.md
-pnpm exec astro build; echo "exit=$?"        # Expected: exit=1
+./node_modules/.bin/astro build; echo "exit=$?"        # Expected: exit=1
 ```
 
-验完 `rm -rf "$SITE"`（副本在 `mktemp -d` 给的临时目录里，不在仓库内）。
+验完用 `find "$SITE" -depth -delete` 删副本（本机的安全 hook 会拦 `rm -rf`；副本在仓库的兄弟目录里，不在仓库内）。
 
 - [ ] **Step 5: 提交**
 
@@ -3259,6 +3264,11 @@ pnpm exec astro build; echo "exit=$?"        # Expected: exit=1
 git add src/content.config.ts src/components/PostList.astro src/layouts/PostLayout.astro
 git commit -m "feat(content): accept md posts and optional description"
 ```
+
+**复审决策记录（Task 7）**：
+
+- **不加 `aria-label`（复审 Minor #5，我判断不加更好）**：那个行级 `<a>` 的可访问名现在由内容决定（标题 + 日期 + 摘要），加 `aria-label="<标题>"` 会把日期与摘要从可访问名里**挤掉**，信息量反而变少。HTML5 允许 `<a>` 包流内容，标题与日期都在里面，不存在「链接没有名字」的问题。
+- **空的 `draft:` 归一成 `false`（= 发布），保留现状**：与「省略该键 = false」一致，也与同步路径（生成器显式写 `draft: false`）一致。写了 `draft:` 却不填值是很反常的写法，为它单独定义「= 草稿」会让同名字段出现两种默认值。若将来真有人这么写，改动方向是「空值报错」而不是「空值等于草稿」。
 
 ---
 
