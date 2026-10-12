@@ -649,6 +649,15 @@ git commit -m "feat(sync): add note parsing and frontmatter mapping"
 > 块引用层数相同、缩进不超过 `max(开启缩进, 3)`；另把 `headingAnchor` 的注释订正为与实现相符（例外为同名标题、
 > 以及标题内含行内链接/图片）。已核对：本 vault 111 篇笔记在修复前后解析结果完全一致。
 > 本轮测试 34 → 36 项，提交信息同样用 `fix(sync): ...`。
+> **修订记录第三轮（2026-10-13，`de07055` 之后）**：复审确认闭合回归已修复，并指出围栏缩进按**字符数**计的残余：
+> 制表符在 CommonMark 里推进到下一个 4 的倍数，按 1 计会让 `\t``` ` 被当成顶格闭合，代码块提前收掉、
+> 其后内容被改写——与上一轮同一类错，且是「绝不改写代码」这条前提上最后一处会改写代码的路径。
+> 改为按列计算缩进。另订正两处与 spec 已不符的注释（误判开启的代价、列表项缩进上界）。
+> 已核对：本 vault 111 篇笔记在修复前后解析结果一致，且无制表符缩进的围栏标记行。
+> 本轮测试 36 → 38 项。**已知且本轮不修**：闭合比开启多缩进 2–3 列时会被判为不闭合（安全方向，漏转换）；
+> 开启缩进更深而闭合缩进更浅的形状（如 8 空格开启、4 空格闭合）行级判定无法忠实区分——是否需要闭合取决于下一行的缩进，
+> 要真正修必须引入前瞻或块级解析，本 vault 不可达，暂列为已知限制。
+
 
 
 - [ ] **Step 1: 写失败的测试**
@@ -956,6 +965,24 @@ test('合法的闭合仍被认出（顶格缩进 3 空格、列表项 4 空格�
   assert.ok(list.includes('const s = `[[笔记]]`;'), list);
   assert.equal(list.split('[目标文章]').length - 1, 1, list);
 });
+
+// 缩进按列算：制表符在 CommonMark 里推进到下一个 4 的倍数，按字符数 1 计会让 `\t``` ` 被当成顶格闭合，
+// 代码块提前收掉、其后内容被改写——与闭合复用开启正则那次同一类错。
+test('制表符缩进的围栏同样不构成闭合', () => {
+  const body = '```\n\t```\nafter [[笔记]]\n```';
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('after [[笔记]]'), out);
+  assert.equal(out.split('[目标文章]').length - 1, 0, out);
+});
+
+// 反向守门：制表符开启、制表符闭合的代码块仍要能正常闭合，不能被上一处一并挡掉。
+// 代码行里必须含反引号，否则两个围栏行会被 splitInlineCode 凑成一对行内代码而白捡一层保护。
+test('制表符开启并闭合的围栏仍被认出', () => {
+  const body = '\t```js\n\tconst s = `[[笔记]]`;\n\t```\n\n[[笔记]]';
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('const s = `[[笔记]]`;'), out);
+  assert.equal(out.split('[目标文章]').length - 1, 1, out);
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -979,11 +1006,19 @@ const FENCE_RE = /^((?:[ \t]*>[ \t]?)*[ \t]*)(`{3,}|~{3,})(.*)$/;
 /**
  * 围栏的上下文。闭合判定必须与开启同上下文：代码块内部一行 4 空格缩进的 ``` 或 `> ``` 是字面文本，
  * 不是闭合标记——按 CommonMark，块引用前缀与超过 3 空格的缩进在代码块内都不作数。
+ * 缩进按**列**算：制表符在 CommonMark 里推进到下一个 4 的倍数，按字符数 1 计会把 `\t``` ` 误判成
+ * 顶格闭合，代码块被提前收掉、其后内容被改写——与闭合复用开启正则那次是同一类错。
  */
 function fenceContext(prefix) {
+  let columns = 0;
+  for (const char of prefix) {
+    if (char === ' ') columns += 1;
+    else if (char === '\t') columns += 4 - (columns % 4);
+    else break; // 首个非空白（`>`）之后不再计缩进
+  }
   return {
     depth: (prefix.match(/>/g) ?? []).length,
-    indent: prefix.match(/^[ \t]*/)[0].length,
+    columns,
   };
 }
 
@@ -993,8 +1028,9 @@ function fenceContext(prefix) {
  * 三处刻意的宽松与归一化，都为了堵住「绝不改写代码」这条绝对前提上的破口：
  * - 围栏允许任意缩进与块引用前缀。列表项里的代码块缩进 4 空格以上、callout 里的代码块每行带 `> `，
  *   按 CommonMark 两种解释下内容都是代码，但 `^ {0,3}` 一个都认不出，只能靠行内代码**碰巧**配对
- *   挡住替换——代码里一旦含反引号就漏。收紧的代价是「少转换几个链接」，漏认的代价是「改写代码」，
- *   两者不对称，一律往多认的方向偏。
+ *   挡住替换——代码里一旦含反引号就漏。漏认的代价是「改写代码」，多认的代价是「跳过转换」，
+ *   两者不对称，一律往多认的方向偏；但要清楚代价不是「少转换几个链接」——误判的开启会吞掉其后
+ *   直到下一个同形围栏之间的全部内容，影响面可能是一整篇。
  * - 空 buffer 不产生分段。否则相邻围栏之间会凭空多出一个空段，join 后就是输入里没有的空行。
  * - 输入先做 CRLF→LF 归一化（本模块唯一的归一化点）：围栏标记行与 callout 行都按 '\n' 切分并用
  *   `$` 收尾，行尾的 \r 会让它们整行都匹配不上，于是围栏失效、callout 全篇静默不转换。
@@ -1026,9 +1062,9 @@ export function splitByCodeFence(body) {
         fenceLength = marker[2].length;
         const context = fenceContext(marker[1]);
         fenceDepth = context.depth;
-        // 顶格围栏的闭合允许缩进到 3 空格（CommonMark 的闭合规则）；列表项里的围栏开启就带 4 空格，
-        // 所以上界取两者较大者，否则合法的闭合反被漏认、其后整篇被当成代码。
-        fenceIndent = Math.max(context.indent, 3);
+        // 顶格围栏的闭合允许缩进到 3 空格（CommonMark 的闭合规则）；列表项里的围栏开启就带 4 空格
+        // （嵌套更深的还要更多），所以上界取两者较大者，否则合法的闭合反被漏认、其后整篇被当成代码。
+        fenceIndent = Math.max(context.columns, 3);
       }
       buffer.push(line);
     } else {
@@ -1040,7 +1076,7 @@ export function splitByCodeFence(body) {
         marker[2].length >= fenceLength &&
         marker[3].trim() === '' &&
         context.depth === fenceDepth &&
-        context.indent <= fenceIndent;
+        context.columns <= fenceIndent;
       if (closes) {
         flush(true);
         fenceChar = null;
@@ -1210,7 +1246,7 @@ export function detectUnsupportedSyntax(body, sourceRel) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 37 + 36 = 73 项通过
+Expected: PASS —— 累计 37 + 38 = 75 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1399,7 +1435,7 @@ export function buildIndexes(scanned) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 73 + 6 = 79 项通过
+Expected: PASS —— 累计 75 + 6 = 81 项通过
 
 - [ ] **Step 6: 提交**
 
@@ -1518,7 +1554,7 @@ export function saveManifest(config, manifest) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 79 + 5 = 84 项通过
+Expected: PASS —— 累计 81 + 5 = 86 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -2174,7 +2210,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 84 + 14 = 98 项通过
+Expected: PASS —— 累计 86 + 14 = 100 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
