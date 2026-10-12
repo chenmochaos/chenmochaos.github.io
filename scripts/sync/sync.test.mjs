@@ -357,3 +357,57 @@ test('命令行入口把 vault 根目录读取失败渲染成 ❌ 与退出码 1
   assert.equal(out, ''); // 没有报告：这次同步什么都没做
   assert.match(err, /❌ .*无法读取 vault 目录/);
 });
+
+// spec §7.1 的第二个合取项：可删的路径必须等于清单记录的路径。删除路径由 slug 反推，只在清单
+// 没被改坏时才相等；不相等说明清单与磁盘的对应关系已被破坏，宁可漏删一轮也不删错文件。
+test('清单记录的路径与推导出的路径不一致时跳过删除并报错', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')));
+
+  // 模拟清单被手工改过或合并解冲突出错
+  const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
+  manifest.entries.a.output = 'src/content/posts/somewhere-else.md';
+  fs.writeFileSync(config.manifestAbs, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+  // 取消发布让「a」成为待删项；此时仍有 1 篇 .md 被扫到，闸门 a 不会触发
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')), '路径对不上时不能删');
+  assert.ok(result.errors.some((error) => /不一致/.test(error)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 删除比覆盖更严。spec §7.4 已经承认「生成文件被手工改过」真实会发生（用户直接在博客侧编辑
+// 「已发布」的版本），覆盖有下一轮 vault 兜底，删除没有——静默销毁用户的改动不可逆。
+test('生成文件被手工改过后取消发布不会静默删除', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+
+  const generated = path.join(config.contentDirAbs, 'a.md');
+  fs.appendFileSync(generated, '\n我手写的一段补充\n', 'utf8');
+
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.match(fs.readFileSync(generated, 'utf8'), /我手写的一段补充/); // 改动还在
+  assert.ok(result.warnings.some((warning) => /手工改过/.test(warning)));
+  fs.rmSync(root, { recursive: true, force: true });
+});

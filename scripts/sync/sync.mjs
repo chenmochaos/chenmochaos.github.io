@@ -235,11 +235,37 @@ export function planSync(config) {
   } else {
     for (const slug of staleSlugs) {
       const entry = manifest.entries[slug];
+      const outputPath = path.join(config.contentDirAbs, `${slug}.md`);
+      const derived = toPosix(path.relative(config.repoRoot, outputPath));
+      const recorded = typeof entry.output === 'string' ? entry.output : '(清单里没有记录)';
+
+      // spec §7.1 的第二个合取项。删除路径本来是从 slug 反推的，只有在清单没被改坏时才等于
+      // entry.output；不相等说明清单与磁盘的对应关系已经被破坏（手工编辑、合并解冲突出错），
+      // 这时宁可漏删一轮，也不要删掉一个我们其实并不认识的同名文件。
+      if (derived !== recorded) {
+        errors.push(
+          `清单里「${slug}」记录的路径是 ${recorded}，与由 slug 推导出的 ${derived} 不一致，已跳过删除：` +
+            `清单可能被手工改过。确认后请手工删除该文件，并从 ${config.manifestPath} 里移除这一条。`,
+        );
+        continue;
+      }
+
+      // spec §7.4 的同胞条款。§7.4 承认「生成文件被手工改过」是真实会发生的事——用户可能直接
+      // 在博客侧编辑「已发布」的版本。覆盖有下一轮 vault 兜底，删除没有：把用户的改动静默销毁
+      // 不可逆。文件不存在不算「被改过」（生成物早被删了），照常生成动作把清单条目清掉。
+      if (fs.existsSync(outputPath) && hashText(fs.readFileSync(outputPath, 'utf8')) !== entry.outputHash) {
+        warnings.push(
+          `生成文件 ${slug}.md 被手工改过（内容哈希与清单记录不符），已跳过删除：` +
+            `确认无需保留后请手工删除该文件，并从 ${config.manifestPath} 里移除「${slug}」这一条`,
+        );
+        continue;
+      }
+
       actions.push({
         type: 'delete',
         slug,
         sourceRel: entry.source,
-        outputPath: path.join(config.contentDirAbs, `${slug}.md`),
+        outputPath,
         content: null,
         outputHash: null,
         images: [],
