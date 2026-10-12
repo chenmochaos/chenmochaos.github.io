@@ -274,3 +274,27 @@ test('detectUnsupportedSyntax 截断超长的命中内容', () => {
   assert.match(warning, /==高亮==/);
   assert.match(warning, /@ STX\/a\.md$/);
 });
+
+// 闭合围栏此前复用开启那套放宽正则：代码块内部一行 4 空格缩进的 ``` 或带 `> ` 的 ``` 会被当成闭合标记，
+// 块被提前收掉，其后本属代码的内容当正文改写——按 CommonMark 这两行都是字面文本（缩进超 3 空格、
+// 块引用前缀在代码块内都不作数），漏认的方向才是安全的。这是 66419a8 引入的回归。
+test('代码块内部缩进或带块引用前缀的围栏不构成闭合', () => {
+  const bodies = ['```\n    ```\nafter [[笔记]]\n```', '```\n> ```\nafter [[笔记]]\n```'];
+  for (const body of bodies) {
+    const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+    assert.ok(out.includes('after [[笔记]]'), out);
+    assert.equal(out.split('[目标文章]').length - 1, 0, out);
+  }
+});
+
+// 上层修复不能把合法的闭合一并挡掉：顶格开启、闭合缩进 3 空格（CommonMark 允许），
+// 以及列表项里开启与闭合同为 4 空格
+test('合法的闭合仍被认出（顶格缩进 3 空格、列表项 4 空格）', () => {
+  const shallow = transformBody('```\ncode [[笔记]]\n   ```\n\n[[笔记]]', makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(shallow.includes('code [[笔记]]'), shallow);
+  assert.equal(shallow.split('[目标文章]').length - 1, 1, shallow);
+
+  const list = transformBody('- 步骤\n\n    ```js\n    const s = `[[笔记]]`;\n    ```\n\n[[笔记]]', makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(list.includes('const s = `[[笔记]]`;'), list);
+  assert.equal(list.split('[目标文章]').length - 1, 1, list);
+});
