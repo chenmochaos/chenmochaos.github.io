@@ -1276,7 +1276,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { makeConfig } from './config.mjs';
+import { DEFAULT_CONFIG, makeConfig } from './config.mjs';
 import { scanVault, buildIndexes } from './vault.mjs';
 
 /** 建一个临时 vault 目录树，返回 { root, config }。 */
@@ -1309,10 +1309,39 @@ test('scanVault 跳过 dot 目录与配置里的排除目录', () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+// 全小写的文件名在本机 tmpfs 上 readdirSync 已按字节序返回 a,b,c，与 localeCompare 序恰好重合，
+// 于是删掉 sort 这项测试照样通过（变异验证：0 fail），名字里的「按名称排序」就落空了。
+// 混合大小写把两种序分开：字节序把大写排在小写前，localeCompare 按字母序交错。
 test('scanVault 结果顺序稳定（按名称排序）', () => {
-  const { root, config } = makeVault({ 'STX/b.md': 'x', 'STX/a.md': 'y', 'STX/c.md': 'z' });
-  assert.deepEqual(scanVault(config).map((f) => f.name), ['a.md', 'b.md', 'c.md']);
+  const { root, config } = makeVault({ 'STX/b.md': 'x', 'STX/A.md': 'y', 'STX/c.md': 'z', 'STX/Z.md': 'w' });
+  assert.deepEqual(scanVault(config).map((f) => f.name), ['A.md', 'b.md', 'c.md', 'Z.md']);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 根目录读不到时「扫到 0 个文件」与「vault 是空的」无法区分，而同步层会据此判定所有产物都该删除
+test('vault 根目录读不到时抛错，不静默返回空', () => {
+  const config = makeConfig({ vaultDir: path.join(os.tmpdir(), 'vault-that-does-not-exist') });
+  assert.throws(() => scanVault(config), /无法读取 vault 目录/);
+});
+
+// 权限位对 root 无效，以 root 跑测试时这条用例没有意义
+test('子目录读不到时记警告并继续扫描其余文件', (t) => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('以 root 运行时权限位不起作用');
+    return;
+  }
+  const { root, config } = makeVault({ 'locked/secret.md': 'y', 'open/a.md': 'x' });
+  const locked = path.join(root, 'locked');
+  fs.chmodSync(locked, 0o000);
+  try {
+    const warnings = [];
+    assert.deepEqual(scanVault(config, warnings).map((f) => f.relPath), ['open/a.md']);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /无法读取目录 locked：EACCES/);
+  } finally {
+    fs.chmodSync(locked, 0o755); // 先恢复权限再删，否则 rmSync 清不掉 000 目录
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('buildIndexes 分离笔记与附件，附件按小写文件名索引', () => {
@@ -1323,6 +1352,26 @@ test('buildIndexes 分离笔记与附件，附件按小写文件名索引', () =
   const { notes, attachments } = buildIndexes(scanVault(config));
   assert.deepEqual(notes.map((f) => f.name), ['a.md']);
   assert.equal(attachments.get('pasted image 1.png'), path.join(root, 'STX/zz_Attachments/Pasted Image 1.PNG'));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 先到先得此前只活在注释里：变异成后到先得，全部测试照样通过
+test('同名附件先到先得并记录冲突警告', () => {
+  const { root, config } = makeVault({ 'AAA/shot.png': 'first', 'zzz/shot.png': 'second' });
+  const warnings = [];
+  const { attachments } = buildIndexes(scanVault(config), warnings);
+  assert.equal(attachments.get('shot.png'), path.join(root, 'AAA/shot.png'));
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /同名附件冲突：「zzz\/shot\.png」被忽略/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// notes 用小写后缀判定，但此前 fixture 里唯一的大写文件名是附件——.MD 走哪条分支没人验过
+test('大写扩展名的 .MD 文件仍算笔记', () => {
+  const { root, config } = makeVault({ 'STX/A.MD': 'x', 'STX/zz_Attachments/B.PNG': 'y' });
+  const { notes, attachments } = buildIndexes(scanVault(config));
+  assert.deepEqual(notes.map((f) => f.name), ['A.MD']);
+  assert.equal(attachments.size, 1);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -1337,7 +1386,14 @@ test('makeConfig 覆盖项生效且不污染默认值', () => {
   const a = makeConfig({ vaultDir: '/tmp/v1' });
   const b = makeConfig();
   assert.equal(a.vaultDir, '/tmp/v1');
-  assert.equal(b.vaultDir, '/home/minus/Wiki');
+  assert.equal(b.vaultDir, DEFAULT_CONFIG.vaultDir);
+  // 数组若按引用共享，任何一次 push 都会污染所有 config 与默认值——只查标量查不出来
+  const before = [...DEFAULT_CONFIG.excludeDirs];
+  assert.notEqual(a.excludeDirs, DEFAULT_CONFIG.excludeDirs);
+  assert.notEqual(b.imageExtensions, DEFAULT_CONFIG.imageExtensions);
+  a.excludeDirs.push('tmp-notes');
+  assert.deepEqual(DEFAULT_CONFIG.excludeDirs, before);
+  assert.deepEqual(b.excludeDirs, before);
 });
 ```
 
@@ -1353,6 +1409,13 @@ Expected: FAIL —— `Cannot find module './config.mjs'`
 ```js
 import path from 'node:path';
 
+/**
+ * 相对路径一律相对 repoRoot 解析（见 makeConfig）。vaultDir 不参与解析：它指向 vault 而非仓库产物，
+ * 必须是绝对路径，否则 walk 产出的 absPath 名不副实。
+ *
+ * repoRoot 取模块加载时的 process.cwd()：`pnpm sync` 从仓库根调起且中途不 chdir，两者等价；
+ * 写成常量是为了让这份默认值本身可读、可被测试直接断言。
+ */
 export const DEFAULT_CONFIG = {
   repoRoot: process.cwd(),
   vaultDir: '/home/minus/Wiki',
@@ -1363,13 +1426,24 @@ export const DEFAULT_CONFIG = {
   urlPrefix: '/posts',
   imageUrlPrefix: '/images',
   descriptionMaxChars: 120,
+  // 开头四项已被 vault.mjs 的 dot 规则覆盖，列在这里只是把「不该同步的东西」写全，便于阅读；
+  // 真正独立起作用的是 zz_Templates 与 node_modules。别删掉 dot 规则后以为这里还在兜底。
   excludeDirs: ['.obsidian', '.trash', '.claude', '.claudian', 'zz_Templates', 'node_modules'],
   imageExtensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif'],
 };
 
-/** 合并覆盖项并把相对路径解析成绝对路径。 */
+/**
+ * 合并覆盖项并把相对路径解析成绝对路径。
+ * 数组也复制一份：`{...DEFAULT_CONFIG}` 是浅拷贝，共享的数组被任何调用方 push 一次，
+ * 就会同时污染 DEFAULT_CONFIG 与之后创建的每一个 config。
+ */
 export function makeConfig(overrides = {}) {
-  const config = { ...DEFAULT_CONFIG, ...overrides };
+  const config = {
+    ...DEFAULT_CONFIG,
+    ...overrides,
+    excludeDirs: [...(overrides.excludeDirs ?? DEFAULT_CONFIG.excludeDirs)],
+    imageExtensions: [...(overrides.imageExtensions ?? DEFAULT_CONFIG.imageExtensions)],
+  };
   config.contentDirAbs = path.resolve(config.repoRoot, config.contentDir);
   config.imagesDirAbs = path.resolve(config.repoRoot, config.imagesDir);
   config.manifestAbs = path.resolve(config.repoRoot, config.manifestPath);
@@ -1385,41 +1459,70 @@ export function makeConfig(overrides = {}) {
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** 递归遍历 vault，跳过 dot 目录与 excludeDirs，结果按名称排序以保证顺序稳定。 */
-export function scanVault(config) {
+/**
+ * 相对路径统一成 URL 用的正斜杠。Linux 上这是恒等变换，因此没有测试能看见它（变异删掉它测试全过），
+ * 只能靠审查守住；存在的意义是把跨平台差异收在一个地方。
+ */
+function toPosix(value) {
+  return value.split(path.sep).join('/');
+}
+
+/**
+ * 递归遍历 vault，返回每个文件的 { absPath, relPath, name }（不止 .md：附件也要在这里收集）。
+ *
+ * 顺序：每个目录内按名称排序后再下探，得到确定的 DFS 序。确定性是 buildIndexes「同名附件先到先得」
+ * 的前提——readdirSync 的原始顺序由文件系统决定（ext4 是哈希序，tmpfs 是字节序），不排序就会出现
+ * 「同一份 vault 在两台机器上挑中不同的同名附件」。比较器显式钉住 'en'：不传 locale 时 localeCompare
+ * 跟随 $LANG/LC_ALL，同名附件的胜者乃至写进 public/images 的内容会随环境变化。
+ *
+ * 读不到的情况分两档，因为代价不对称：
+ * - 根目录读不到（路径拼错、盘没挂上）→ 抛错。此时「扫到 0 个文件」与「vault 是空的」无法区分，
+ *   而同步层会据此判定所有产物都该删除，一次路径笔误就能清空整个博客目录。
+ * - 子目录读不到（权限、竞态）→ 记进 warnings 后继续，其余文件照常同步。漏一个子目录的代价是
+ *   「少几篇文章」（报告里看得到），中断整次同步的代价是「什么都不同步」。
+ *
+ * 已知限制：不跟随符号链接（entry.isFile()/isDirectory() 对链接都返回 false），vault 里的链接笔记
+ * 会被静默跳过。真实 vault 唯一的链接在被排除的 .claude/ 下，暂不受影响。
+ */
+export function scanVault(config, warnings = []) {
   const collected = [];
-  walk(config.vaultDir, config.vaultDir, config, collected);
+  walk(config.vaultDir, config.vaultDir, config, collected, warnings);
   return collected;
 }
 
-function walk(dir, root, config, out) {
+function walk(dir, root, config, out, warnings) {
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return; // 目录读不到（权限/竞态）时静默跳过，不影响其余文件
+  } catch (error) {
+    if (dir === root) throw new Error(`无法读取 vault 目录 ${dir}：${error.code ?? error.message}`);
+    warnings.push(`无法读取目录 ${toPosix(path.relative(root, dir))}：${error.code ?? error.message}，该目录内容已跳过`);
+    return;
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
+  entries.sort((a, b) => a.name.localeCompare(b.name, 'en'));
 
   for (const entry of entries) {
     const abs = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name.startsWith('.') || config.excludeDirs.includes(entry.name)) continue;
-      walk(abs, root, config, out);
+      walk(abs, root, config, out, warnings);
     } else if (entry.isFile()) {
-      out.push({
-        absPath: abs,
-        relPath: path.relative(root, abs).split(path.sep).join('/'),
-        name: entry.name,
-      });
+      out.push({ absPath: abs, relPath: toPosix(path.relative(root, abs)), name: entry.name });
     }
   }
 }
 
-/** 拆成笔记数组与 附件名(小写) -> 绝对路径 的索引。同名附件先到先得（顺序已排序）。 */
-export function buildIndexes(scanned) {
+/**
+ * 拆成笔记数组与 附件名(小写) -> 绝对路径 的索引。
+ *
+ * 同名附件先到先得，胜者由 walk 的确定 DFS 序决定。这条规则此前只写在注释里：变异成后到先得，
+ * 全部测试照样通过。冲突会丢掉另一个真实存在的文件，所以这里记警告——静默丢弃是本模块最不该做的事
+ * （报告由同步层汇总，本模块只负责不把信息吞掉）。
+ */
+export function buildIndexes(scanned, warnings = []) {
   const notes = [];
   const attachments = new Map();
+  const winners = new Map(); // 只为冲突提示保留胜者的相对路径
 
   for (const file of scanned) {
     if (file.name.toLowerCase().endsWith('.md')) {
@@ -1427,7 +1530,13 @@ export function buildIndexes(scanned) {
       continue;
     }
     const key = file.name.toLowerCase();
-    if (!attachments.has(key)) attachments.set(key, file.absPath);
+    const winner = attachments.get(key);
+    if (winner === undefined) {
+      attachments.set(key, file.absPath);
+      winners.set(key, file.relPath);
+    } else if (winner !== file.absPath) {
+      warnings.push(`同名附件冲突：「${file.relPath}」被忽略，一律使用「${winners.get(key)}」`);
+    }
   }
 
   return { notes, attachments };
@@ -1437,7 +1546,7 @@ export function buildIndexes(scanned) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 75 + 6 = 81 项通过
+Expected: PASS —— 累计 75 + 10 = 85 项通过
 
 - [ ] **Step 6: 提交**
 
@@ -1445,6 +1554,38 @@ Expected: PASS —— 累计 75 + 6 = 81 项通过
 git add scripts/sync/config.mjs scripts/sync/vault.mjs scripts/sync/vault.test.mjs
 git commit -m "feat(sync): add config and vault scanning"
 ```
+
+<!-- 首次实现已提交为 b6d3afb（6 项测试）。以下为审查后的修订。 -->
+
+- [ ] **Step 7: 审查后的修订**
+
+spec 合规审查通过（三个文件与本节代码块逐字节一致），代码质量审查提出 9 项。只修「会真的丢内容或删内容」的路径，其余记录理由。落地内容：
+
+1. **根目录读不到改为抛错**（原实现静默返回空数组）。审查者用本节 Task 6 的代码组合出后果链：`vaultDir` 指向不存在的路径 → `scanVault` 返回 `[]` → 计划删除全部生成物 → 打印 `✅ 无警告无错误` 并退出 0。这是唯一会「静默删内容」的路径。子目录读不到则记入新增的 `warnings` sink 后继续。
+2. **排序比较器钉住 `'en'`**。原 `localeCompare(b.name)` 跟随 `$LANG`/`LC_ALL`：实测同一个 vault 在 `LC_ALL=C` 与默认 locale 下，同名附件 `a/shot.png` 与 `á/shot.png` 的胜者互换、写进 `public/images` 的内容随之不同。真实 vault 当前 0 处同名附件冲突，属潜在问题，但改它的代价只有两个字符。
+3. **注释里「结果按名称排序」是不实陈述**：sort 是逐目录的，拼接后并非全局按名排序。改为陈述真正成立的性质。
+4. **测试加固**（原 6 项中两项是空转的）：
+   - 「结果顺序稳定」的 fixture 用全小写 `a/b/c`，而本机 tmpfs 的 `readdirSync` 本身就返回字节序，与 `localeCompare` 序重合 → 变异删掉 `sort` 后 **6 项全过**。改用混合大小写 `b/A/c/Z`（字节序把大写排在小写前，与 localeCompare 交错），变异后该项失败、其余 5 项通过。
+   - 「同名附件先到先得」只活在注释里 → 变异成后到先得，**6 项全过**。补两项测试把它钉住。
+5. **`makeConfig` 的数组不再按引用共享**（`{...DEFAULT_CONFIG}` 是浅拷贝），并让「不污染默认值」那条测试真的去查数组。
+6. **补 `.MD` 分类测试**（此前 fixture 里唯一的大写文件名是附件）。
+7. 测试不再硬编码 `/home/minus/Wiki`，改用导出的 `DEFAULT_CONFIG.vaultDir`。
+8. 注释补到同类模块的水准，并补上 `config` 参数契约与三条已知限制。
+
+测试数 6 → 10，累计 **85**。
+
+有意不修（记录理由，避免下一轮重复提出）：
+
+- **附件与笔记的同名冲突策略不一致**（附件按 DFS 序先到先得，笔记按短路径优先）：附件索引的值是扁平文件名，没有「路径深度」这个可比量，套用笔记的规则要改索引形状。0 处冲突，改为冲突记警告。
+- **`repoRoot` 在模块加载期取值**：CLI 从仓库根调起且不 chdir，注释里已写明；改成调用期取值会让 `DEFAULT_CONFIG` 与实际解析结果不一致。
+- **`excludeDirs` 里四个 dot 项是死配置**（已被 dot 规则覆盖）：保留并在 `config.mjs` 注释里点明，避免读者误以为删掉 dot 规则还有这里兜底。
+- **不跟随符号链接**：真实 vault 唯一的链接在被排除的 `.claude/` 内。
+- **`toPosix` 与 Task 6 的 `sync.mjs` 会各有一份**：本模块内先私有；Task 6 实现时若确认是同一表达式，再从 `vault.mjs` 导出复用。
+
+**Task 6 必须承接**（sink 与闸都要在编排层接上，否则等于没做）：
+
+1. `scanVault(config, warnings)` / `buildIndexes(scanned, warnings)` 传入同一个 warnings 数组并汇总进报告；
+2. 扫描到 0 篇笔记而 manifest 非空时**拒绝执行删除**并报错（spec §7.6）——warnings 只提示、不阻断，单靠它挡不住第 1 条的路径。
 
 ---
 
@@ -1556,7 +1697,7 @@ export function saveManifest(config, manifest) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 81 + 5 = 86 项通过
+Expected: PASS —— 累计 85 + 5 = 90 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -2212,7 +2353,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 86 + 14 = 100 项通过
+Expected: PASS —— 累计 90 + 14 = 104 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 

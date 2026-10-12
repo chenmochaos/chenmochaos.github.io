@@ -62,8 +62,8 @@ const CONFIG = {
 
 职责分解（各自可独立理解与测试）：
 
-1. **`scanVault()`** — 递归遍历 vault（跳过 `excludeDirs`），返回所有 `.md` 文件及其解析后的 frontmatter。
-2. **`buildIndexes(files)`** — 建立两个索引：`noteName → file`（笔记按文件名基名）、`attachmentName → file`（所有非 md 文件按文件名基名，用于解析 `![[图片]]`）。
+1. **`scanVault(config, warnings = [])`** — 递归遍历 vault（跳过 dot 目录与 `excludeDirs`），返回**所有**文件的 `{ absPath, relPath, name }`，不只是 `.md`：附件解析依赖这里一并收集，frontmatter 由调用方用 `parseNote()` 解析。每个目录内按名称排序后再下探，得到确定的 DFS 序（`readdirSync` 的原始顺序取决于文件系统，ext4 是哈希序、tmpfs 是字节序；不排序则同一份 vault 在不同机器上会挑中不同的同名附件）。比较器显式钉住 `'en'`：`localeCompare` 不传 locale 时跟随 `$LANG`/`LC_ALL`，会让同名附件的胜者乃至产物内容随环境变化。**vault 根目录读不到时抛错，不返回空数组**（见 §7.6）；子目录读不到则写入 `warnings` 后继续遍历。已知限制：不跟随符号链接（`isFile()`/`isDirectory()` 对链接都返回 false），链接笔记会被跳过。
+2. **`buildIndexes(scanned, warnings = [])`** — 拆成 `notes`（`.md`，大小写不敏感）与 `attachments`（非 md 文件按**小写文件名**索引，值为绝对路径）。同名附件**先到先得**，胜者由 `scanVault` 的确定序决定；被丢弃的那个写入 `warnings`，不静默丢文件。
 3. **`resolveSlugs(publishable)`** — 为每篇待发布笔记确定 slug，检出冲突与非法 slug。
 4. **`transformBody(body, ctx)`** — 正文转换（见 §6），按代码块分段，代码块内不做任何替换。
 5. **`writeOutputs()`** — 写文件、拷贝附件、写 manifest。生成内容与磁盘上现有文件完全一致时不重写（避免无意义的 git diff 与 mtime 抖动），报告中记为"跳过"。
@@ -134,6 +134,7 @@ slug 冲突（两篇笔记解析出同一 slug）：两篇都跳过并报错，�
 3. 取消 `publish`（改为 `false` 或删除属性）或源笔记被删 → 删除 `src/content/posts/<slug>.md` 与 `public/images/<slug>/` 整个目录，并从 manifest 移除。
 4. manifest 记录生成时的内容哈希；下次同步若发现磁盘上生成文件哈希与记录不符（说明生成文件被手工改过）→ 报告显式警告，随后仍以 vault 为准覆盖（vault 是唯一源）。
 5. 脚本不执行任何 git 命令；commit 与 push 始终由用户决定。
+6. **vault 根目录读不到（路径拼错、外置盘/网盘未挂载）→ 报错退出，不执行任何删除或写入。** 根目录读不到与「vault 是空的」在扫描结果上无法区分，若按空结果走 §7.3 的清理逻辑，一次路径笔误就会清空 `src/content/posts/` 下所有生成物。为此 `scanVault` 在根目录失败时抛错，且同步层另加一道闸：扫描到 0 篇笔记而 manifest 非空时，拒绝执行删除并报错（`warnings` 只作提示、不阻断，单靠它挡不住这条路径）。
 
 manifest 结构：
 
@@ -243,3 +244,6 @@ Vault 中实际使用但博客样式表未覆盖的元素统计：表格 11 篇�
 | 部分 Obsidian 语法（`%%`、`==`）未转换 | 明确列为非目标，报告警告提示 |
 | 跨行行内代码片段里整行是 callout 标记时会被改写 | 形状罕见；先切行内代码会破坏 callout 的整行判定，取舍已记录在 `transform.mjs` 的注释里 |
 | 围栏开启识别偏保守，误判的开启会吞掉其后直到下一个同形围栏的内容 | 方向安全（跳过转换而非改写代码），按 §6 前置的取舍原则接受；已核对本 vault 111 篇笔记在修复前后解析结果一致 |
+| vault 路径写错或未挂载导致扫描为空，进而在清理阶段删光生成物 | §7.6：根目录读不到即抛错；再做一道「0 篇笔记 + manifest 非空 → 拒绝删除」的闸 |
+| 同名附件冲突（同名图片分处两个目录）时丢掉一个，且附件按 DFS 序先到先得、笔记按短路径优先，两者策略不一致 | 冲突写入报告，不静默丢；真实 vault 当前 0 处同名附件冲突。策略不一致是有意保留：附件索引的值是扁平文件名，没有「路径深度」这个可比量 |
+| vault 里的符号链接笔记不被跟随 | 已知限制（§4.1.1）；真实 vault 唯一的链接位于被排除的 `.claude/` 下，暂不受影响 |
