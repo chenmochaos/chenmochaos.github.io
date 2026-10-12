@@ -15,7 +15,7 @@ const blankAsAbsent = (schema) =>
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/posts' }),
   schema: z.object({
-    title: z.string(),
+    title: blankAsAbsent(z.string()),
     description: blankAsAbsent(z.string().optional()),
     pubDate: blankAsAbsent(z.coerce.date()),
     tags: blankAsAbsent(z.array(z.string()).optional()),
