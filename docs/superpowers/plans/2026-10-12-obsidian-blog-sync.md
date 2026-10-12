@@ -1705,10 +1705,18 @@ test('saveManifest 落盘后 loadManifest 能读回', () => {
     version: 1,
     entries: { b: { source: 'b.md' }, a: { source: 'a.md' } },
   });
+
+  // 落盘格式看文件本身：loadManifest 只承诺 { version, entries }，generatedAt 不进内存对象
+  const raw = fs.readFileSync(config.manifestAbs, 'utf8');
+  const written = JSON.parse(raw);
+  assert.equal(written.version, 1);
+  assert.match(written.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(Object.keys(written.entries), ['a', 'b']); // 键已排序
+  assert.ok(raw.endsWith('}\n'), '文件以换行结尾');
+
   const loaded = loadManifest(config);
-  assert.deepEqual(Object.keys(loaded.entries), ['a', 'b']); // 键已排序
+  assert.deepEqual(Object.keys(loaded.entries), ['a', 'b']);
   assert.equal(loaded.entries.a.source, 'a.md');
-  assert.match(loaded.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -1748,7 +1756,11 @@ Expected: FAIL —— `Cannot find module './manifest.mjs'`
 ```js
 import fs from 'node:fs';
 
-/** 读取生成物清单；文件缺失、损坏或结构不符时一律降级为空清单。 */
+/**
+ * 读取生成物清单；文件缺失、损坏或结构不符时一律降级为空清单。
+ * 返回值固定是 `{ version, entries }`：`generatedAt` 只是落盘格式的一部分（记录写入时刻），
+ * 不参与任何同步决策，所以不进内存对象——要检查它就读文件。
+ */
 export function loadManifest(config) {
   let parsed;
   try {
@@ -1808,6 +1820,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { makeConfig } from './config.mjs';
 import { planSync, runSync, formatReport } from './sync.mjs';
+import { main } from '../sync-obsidian.mjs';
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 
@@ -1975,7 +1988,7 @@ test('指向已发布笔记的内链变成超链接，未发布的降级为纯�
 
   assert.ok(content.includes('[目标](/posts/target-post)'));
   assert.ok(content.includes('见 [目标](/posts/target-post) 和 private-note。'));
-  assert.ok(result.warnings.some((w) => /未解析内链 private-note/.test(w)));
+  assert.ok(result.warnings.some((w) => /未解析内链 \[\[private-note\]\]/.test(w))); // 警告里带 [[ ]]（同 transform 的既有行为）
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -2088,6 +2101,77 @@ test('formatReport 折叠重复出现的同一条警告', () => {
   assert.equal(report.split('未解析内链 [[x]]').length - 1, 1); // 只列一行
   assert.match(report, /（×3）/);
 });
+
+// 闸门 a：vaultDir 指向一个能读、但没有 .md 的目录时，「扫描结果里没有」不等于「源笔记已删除」。
+// 判据是「一篇 .md 都没扫到」，而不是「没有可发布的笔记」——后者见上一条测试，是正常状态。
+test('一篇笔记都没扫到而清单非空时，拒绝删除并报错', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')));
+
+  fs.rmSync(path.join(config.vaultDir, 'STX'), { recursive: true, force: true }); // vault 仍可读，只是空的
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')), '误判成源已删除会清空博客目录');
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /扫描到 0 篇笔记/);
+  assert.match(result.errors[0], /\.sync-manifest\.json/); // 报错要给出可操作的出口
+  const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
+  assert.equal(manifest.entries.a.source, 'STX/a.md'); // 清单也不能被清
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 闸门 b：部分扫描与完整扫描在结果上无从区分，读不到的目录里的笔记会被误判成「源已删除」。
+// 权限位对 root 无效，以 root 跑测试时这条用例没有意义。
+test('有目录读不到时本次不删除任何产物', (t) => {
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('以 root 运行时权限位不起作用');
+    return;
+  }
+  const { root, config } = makeFixture({
+    'STX/locked/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'STX/open.md': '---\npublish: true\nslug: open\ntitle: Open\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')));
+
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/open.md'),
+    '---\npublish: true\nslug: open\ntitle: Open\npubDate: 2026-01-01\n---\n\n改过的正文\n',
+    'utf8'
+  );
+  const locked = path.join(config.vaultDir, 'STX/locked');
+  fs.chmodSync(locked, 0o000);
+  let result;
+  try {
+    result = runSync(config);
+  } finally {
+    fs.chmodSync(locked, 0o755); // 先恢复权限再删，否则 rmSync 清不掉 000 目录
+  }
+
+  assert.equal(result.deleted.length, 0);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')), '读不到 ≠ 已删除');
+  assert.ok(result.warnings.some((warning) => /无法读取目录/.test(warning)));
+  assert.ok(result.errors.some((error) => /无法读取目录/.test(error)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// scanVault 在 vault 根目录读不到时抛错（spec §7.6），CLI 要把它渲染成一行 ❌ 与退出码 1，
+// 而不是把 Node 堆栈丢给用户：这条路径上「什么都没做」，不该看起来像崩了。
+test('命令行入口把 vault 根目录读取失败渲染成 ❌ 与退出码 1', () => {
+  const config = makeConfig({ vaultDir: path.join(os.tmpdir(), 'vault-that-does-not-exist') });
+  let out = '';
+  let err = '';
+  const code = main(config, { out: { write: (chunk) => (out += chunk) }, err: { write: (chunk) => (err += chunk) } });
+
+  assert.equal(code, 1);
+  assert.equal(out, ''); // 没有报告：这次同步什么都没做
+  assert.match(err, /❌ .*无法读取 vault 目录/);
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -2115,6 +2199,14 @@ import { transformBody, detectUnsupportedSyntax } from './transform.mjs';
 import { loadManifest, saveManifest } from './manifest.mjs';
 
 const toPosix = (value) => value.split(path.sep).join('/');
+
+/**
+ * 与 vault.mjs 里那条目录级警告的文案耦合：删除闸要靠它判断「这次扫描是否完整」。
+ * 刻意不把这个前缀做成跨模块导出——它是 6 个字符，为它给扫描模块增加公共 API 不划算；
+ * 代价是这句文案被写了两处，只改一处会被 Task 6 的删除闸测试立刻抓到，不会静默失效。
+ * 同理，本文件的 toPosix 与 vault.mjs 里的同名函数各留一份（1 行恒等变换，第三个调用方出现时再抽）。
+ */
+const UNREADABLE_DIR_PREFIX = '无法读取目录 ';
 
 /** 附件落地文件名：ASCII 化 + 冲突时追加序号。 */
 function uniqueImageName(absPath, usedNames) {
@@ -2159,7 +2251,9 @@ export function buildPublishedMap(notes) {
 export function planSync(config) {
   const warnings = [];
   const errors = [];
-  const { notes: noteFiles, attachments } = buildIndexes(scanVault(config));
+  // 一个数组贯穿扫描与索引：警告只要产生就进同一个 sink，最后由报告统一汇总。
+  // 各传各的 `[]` 等于把扫描层的警告就地丢掉——那是本模块最不该做的事。
+  const { notes: noteFiles, attachments } = buildIndexes(scanVault(config, warnings), warnings);
 
   // 1. 解析所有笔记的 frontmatter
   const notes = noteFiles.map((file) => {
@@ -2300,20 +2394,45 @@ export function planSync(config) {
   }
 
   // 7. 清单里有、但这次不再发布的 → 删除
+  //
+  // 「扫描结果里没有」只有在扫描确定完整时才等于「源笔记已删除」。两种情况它不是：
+  //   a) 一篇 .md 都没扫到而清单非空 —— vaultDir 指向了一个能读、但不是 vault 的目录；
+  //   b) 有目录读不到（权限、竞态）—— 那个目录里的笔记看起来也「消失」了，其实只是没被读到。
+  // 判据必须是「一篇 .md 都没扫到」，不能写成「没有可发布的笔记」：后者是用户自己把 publish 关掉的
+  // 正常状态（见测试「取消 publish 后删除生成文件与图片目录」），按它一刀切就没法取消发布了。
+  //
+  // 两道闸都靠**不生成删除动作**实现，而不是 push 一条 error：runSync 调用 applySync 之前并不检查
+  // plan.errors，错误只影响退出码，靠 error 挡的话文件已经删完了（spec §7.6/§7.7）。
   const currentSlugs = new Set(finalNotes.map((note) => note.slug));
-  for (const [slug, entry] of Object.entries(manifest.entries)) {
-    if (currentSlugs.has(slug)) continue;
-    actions.push({
-      type: 'delete',
-      slug,
-      sourceRel: entry.source,
-      outputPath: path.join(config.contentDirAbs, `${slug}.md`),
-      content: null,
-      outputHash: null,
-      images: [],
-      previousImages: entry.images ?? [],
-      warnings: [],
-    });
+  const staleSlugs = Object.keys(manifest.entries).filter((slug) => !currentSlugs.has(slug));
+  const unreadableDirs = warnings.filter((warning) => warning.startsWith(UNREADABLE_DIR_PREFIX));
+
+  if (staleSlugs.length > 0 && noteFiles.length === 0) {
+    errors.push(
+      `扫描到 0 篇笔记，但清单里有 ${staleSlugs.length} 篇生成记录，已取消全部删除：` +
+        `疑似 vaultDir 指向了错误的目录（当前 vaultDir=${config.vaultDir}）。` +
+        `若确实要清空全部生成物，请先删除 ${config.manifestPath} 再同步。`,
+    );
+  } else if (staleSlugs.length > 0 && unreadableDirs.length > 0) {
+    errors.push(
+      `有 ${unreadableDirs.length} 个目录读不到（${unreadableDirs.join('；')}），已取消 ${staleSlugs.length} 篇的删除：` +
+        `读不到的目录里的笔记会被误判成「源已删除」。修好权限后重跑即可。`,
+    );
+  } else {
+    for (const slug of staleSlugs) {
+      const entry = manifest.entries[slug];
+      actions.push({
+        type: 'delete',
+        slug,
+        sourceRel: entry.source,
+        outputPath: path.join(config.contentDirAbs, `${slug}.md`),
+        content: null,
+        outputHash: null,
+        images: [],
+        previousImages: entry.images ?? [],
+        warnings: [],
+      });
+    }
   }
 
   return { actions, warnings: [...warnings, ...actions.flatMap((action) => action.warnings)], errors };
@@ -2433,7 +2552,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 92 + 16 = 108 项通过
+Expected: PASS —— 累计 92 + 17 = 109 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
@@ -2441,14 +2560,31 @@ Expected: PASS —— 累计 92 + 16 = 108 项通过
 
 ```js
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import { makeConfig } from './sync/config.mjs';
 import { runSync, formatReport } from './sync/sync.mjs';
 
-const dryRun = process.argv.slice(2).includes('--dry');
-const result = runSync(makeConfig(), { dryRun });
+/**
+ * 跑一次同步，把结果渲染成报告，返回进程退出码（0 = 无错误）。
+ * out/err 可注入是为了让「vault 根目录读不到」这条路径可被测试——它是 spec §7.6 的用户可见部分，
+ * 不该只靠人工试。
+ */
+export function main(config, { dryRun = false, out = process.stdout, err = process.stderr } = {}) {
+  try {
+    const result = runSync(config, { dryRun });
+    out.write(`${formatReport(result)}\n`);
+    return result.errors.length > 0 ? 1 : 0;
+  } catch (error) {
+    // scanVault 在 vault 根目录读不到时抛错：这次同步什么都没做，不该以一段堆栈收场。
+    err.write(`❌ ${error.message}\n`);
+    return 1;
+  }
+}
 
-process.stdout.write(`${formatReport(result)}\n`);
-if (result.errors.length > 0) process.exitCode = 1;
+// 只有被当作脚本直接执行时才跑（测试 import 这个模块时不能有副作用）
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = main(makeConfig(), { dryRun: process.argv.slice(2).includes('--dry') });
+}
 ```
 
 在 `package.json` 的 `scripts` 里加：
@@ -2472,6 +2608,23 @@ git add scripts/sync/sync.mjs scripts/sync/sync.test.mjs scripts/sync-obsidian.m
 git commit -m "feat(sync): add sync orchestration and CLI entry"
 ```
 
+- [ ] **Step 8: 修订（Task 4 复审的交接项 + 编排层预读发现）**
+
+Task 4 复审指出：本节的代码是 Task 4 那道「静默丢失」防线的下游，两处必须在本节接上，否则前面白做。落地内容：
+
+1. **一个 warnings 数组贯穿扫描与索引**：`buildIndexes(scanVault(config, warnings), warnings)`。原文是 `buildIndexes(scanVault(config))`——Task 4 已经去掉默认值并在入口加了守卫，这一行不改会直接在 TypeError 上炸；改成各传各的 `[]` 更糟：那等于把扫描层的警告就地丢掉，而报告仍会打印 `✅ 无警告无错误`。
+2. **两道删除闸，都靠不生成删除动作实现**（spec §7.6/§7.7）：a) 一篇 `.md` 都没扫到而清单非空 → 拒绝全部删除并报错；b) 有目录读不到 → 本次不执行任何删除。判据是 `noteFiles.length === 0`（扫到的 .md 数），**不是** `finalNotes.length === 0`（可发布数）：后者是用户把自己唯一一篇文章 `publish` 关掉的正常状态，按它一刀切会让人没法取消发布——既有的「取消 publish 后删除生成文件与图片目录」测试会当场失败。
+   - 关键约束：必须在 `planSync` 里**不生成** delete 动作。`runSync` 调用 `applySync` 之前并不检查 `plan.errors`，错误只影响退出码——靠 push 一条 error 挡的话，文件已经删完了才打印。
+   - 两道闸都会在报告里给出可操作的出口（写清当前 vaultDir、或提示修好权限后重跑；要清空全部生成物的用户可先删 `.sync-manifest.json`）。
+3. **警告前缀的耦合显式化**：删除闸靠 `UNREADABLE_DIR_PREFIX` 过滤 `warnings`，与 vault.mjs 里那条文案是同一个字符串。刻意不做跨模块导出常量（6 个字符，不值得给扫描模块加公共 API），代价是文案写了两处——只改一处会被下面的测试立刻抓到，不会静默失效。
+4. **CLI 把根目录读取失败渲染成一行 ❌ 与退出码 1**，不再把 Node 堆栈丢给用户；为此 `main(config, { out, err })` 导出且可注入，脚本只在被直接执行时才跑（`import.meta.url` 判定），这条路径由测试覆盖。
+5. 新增三项测试（0 篇笔记的删除闸、目录读不到的删除闸、CLI 的错误渲染），测试数 14 → 17，累计 **109**。
+
+有意不修（记录理由，避免下一轮重复提出）：
+
+- **两道闸是钝的**：目录读不到时连「源在其它目录、确实已取消发布」的条目也不删。精确到「只冻结读不到那个目录下的条目」要从警告文本里反解目录路径，脆弱且难测；清理晚一轮没有代价（生成物重跑即补），误删要用户自己去 git 里捞。
+- **slug 出错导致掉出 `finalNotes` 的笔记，其生成物会被当成本次不再发布而删除**：源笔记仍在、报错在报告里可见、修好后重新同步即恢复（vault 是唯一源），故不加第三道闸。若实际使用中觉得吵，再补「本次报错过的源不参与删除」。
+- **`toPosix` 与 vault.mjs 各一份**：1 行恒等变换，抽公共模块的收益低于它带来的间接层，等第三个调用方出现再说。
 ---
 
 ### Task 7: 博客侧放宽内容集合与可选摘要
