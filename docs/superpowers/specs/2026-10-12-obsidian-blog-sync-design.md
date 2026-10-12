@@ -173,6 +173,7 @@ manifest 结构：
 | `src/content.config.ts` | `description: z.string().optional()` | 无摘要的文章是合法状态 |
 | `src/components/PostList.astro` | 标题下方渲染 `post.data.description`，缺失时不渲染该行 | 当前组件根本没渲染摘要，需先补上才能谈"没有就不显示" |
 | `src/layouts/PostLayout.astro` | `description?: string` | 类型跟随 schema |
+| `src/layouts/PostLayout.astro` | `.prose-custom` 补齐表格、h4/h5/h6、任务列表、嵌套列表样式 | 见 §9.1 |
 | `src/pages/posts/[...slug].astro` | 透传 `post.data.description`（可为 `undefined`） | 同上 |
 | `src/layouts/BaseLayout.astro` | 不改 | 已有 `description = 'Personal blog & digital garden'` 兜底，`undefined` 不会渲染成字符串 "undefined" |
 | `package.json` | 加 `"sync": "node scripts/sync-obsidian.mjs"`；devDependency 加 `gray-matter` | 入口与 YAML 解析 |
@@ -180,6 +181,19 @@ manifest 结构：
 | `STX/zz_Templates/Blog-Article.md` | 新建模板 | 用户要求 |
 
 `.sync-manifest.json` 提交进仓库（体积小，记录生成物来源）。
+
+### 9.1 正文样式补齐（`.prose-custom`）
+
+Vault 中实际使用但博客样式表未覆盖的元素统计：表格 11 篇、任务列表 9 篇、h4 及更深标题 3 篇、嵌套列表 23 篇。Obsidian 笔记同步过来后这些元素会以裸样式渲染，需补齐，全部沿用既有设计变量（`--color-border`、`--color-bg-card`、`--color-text-muted` 等）：
+
+| 元素 | 样式要求 |
+|---|---|
+| `table` | 宽度自适应容器、`border-collapse`、表头背景用 `--color-bg-card`、单元格边框用 `--color-border`、字号 `0.9rem`；窄屏可横向滚动 |
+| `h4` / `h5` / `h6` | 按 `1.125rem` / `1rem` / `0.9rem` 递减，字重 600，与 h2/h3 同一套上边距节奏 |
+| 任务列表 | 去掉 `li` 默认圆点，`list-style: none` + 负外边距归位，输入框与文本基线对齐，复选框用 `accent-color` 跟随强调色 |
+| 嵌套列表 | 二级及更深层换用 `circle` / `square` 标记，行高略收紧，保证层级一眼可辨 |
+
+不改动现有已定义的 h2/h3/p/a/blockquote/pre/code/img 规则。
 
 ## 10. 非目标
 
@@ -206,6 +220,7 @@ manifest 结构：
 5. 全流程结束后 `git status` 中 `hello-world.mdx`、`agent-context-tool-harness.mdx`、`ollama-qwen-coder-continue-autocomplete.mdx`、`redis-cache-strategies.mdx` 均未被修改。
 6. 一篇无 `description` 的文章：首页列表只显示标题与日期（无摘要行、无空行占位），文章详情页正常渲染，`<meta name="description">` 回落到站点默认值。
 7. 手写一篇 `.md` 文章放进 `src/content/posts/`，`pnpm build` 能正常收录（验证 glob 放宽生效）。
+8. 构造一篇含表格、任务列表、嵌套列表、h4 的同步文章，页面渲染后元素间距、边框、字号与既有 h2/h3、列表风格一致，无裸样式；1280px 与 400px 两个宽度下表格不撑破布局。
 
 ## 12. 风险
 
