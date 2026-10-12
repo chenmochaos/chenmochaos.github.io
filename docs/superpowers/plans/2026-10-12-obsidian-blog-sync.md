@@ -3311,14 +3311,9 @@ git commit -m "feat(content): accept md posts and optional description"
 Run: `pnpm build`
 Expected: 成功，无 CSS 解析错误。
 
-- [ ] **Step 3: 验证构建**
-
-Run: `pnpm build`
-Expected: 成功，无 CSS 解析错误。
-
 > 样式的视觉核对统一放到 Task 10 Step 5——那时已有真实同步过来的文章（含表格、任务列表、嵌套列表、h4），不必额外造临时文件。
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 3: 提交**
 
 ```bash
 git add src/layouts/PostLayout.astro
@@ -3345,13 +3340,14 @@ publish: false
 title: 
 slug: 
 description: 
-pubDate: 2026-10-12
+pubDate: "{{date}}"
 tags: []
 ---
 
 <!--
 博客发布模板使用说明（不会同步到博客，正文从这里开始写）：
 1. slug 必填，英文小写短横线，决定文章 URL：https://chenmochaos.github.io/posts/<slug>
+   （pubDate 用核心模板的 {{date}} 自动填；万一你的模板不展开它，同步会回落到笔记的修改日期，不会报错）
 2. description 可留空，留空则首页列表只显示标题与日期
 3. 文章写完、校对无误后，把 publish 改成 true
 4. 终端执行：cd /home/minus/Code/Full-Stack/Projects/Blog && pnpm sync
@@ -3540,4 +3536,4 @@ git commit -m "feat: sync obsidian posts into blog via publish property"
 | 5. 手写 `.mdx` 未被修改 | Task 7 Step 4、Task 10 Step 7 |
 | 6. 无 description 只显示标题 | Task 7 Step 2 + Task 10 Step 5（首页截图核对） |
 | 7. 手写 `.md` 能被收录 | Task 7 Step 4（`pnpm build` 页面数不减少） |
-| 8. 表格/任务列表/嵌套列表/h4 风格一致 | Task 8 Step 3、Task 10 Step 5 |
+| 8. 表格/任务列表/嵌套列表/h4 风格一致 | Task 10 Step 5（Task 8 只到「构建无 CSS 解析错误」，视觉核对在这一步） |
