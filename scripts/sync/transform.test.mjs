@@ -298,3 +298,21 @@ test('合法的闭合仍被认出（顶格缩进 3 空格、列表项 4 空格�
   assert.ok(list.includes('const s = `[[笔记]]`;'), list);
   assert.equal(list.split('[目标文章]').length - 1, 1, list);
 });
+
+// 缩进按列算：制表符在 CommonMark 里推进到下一个 4 的倍数，按字符数 1 计会让 `\t``` ` 被当成顶格闭合，
+// 代码块提前收掉、其后内容被改写——与闭合复用开启正则那次同一类错。
+test('制表符缩进的围栏同样不构成闭合', () => {
+  const body = '```\n\t```\nafter [[笔记]]\n```';
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('after [[笔记]]'), out);
+  assert.equal(out.split('[目标文章]').length - 1, 0, out);
+});
+
+// 反向守门：制表符开启、制表符闭合的代码块仍要能正常闭合，不能被上一处一并挡掉。
+// 代码行里必须含反引号，否则两个围栏行会被 splitInlineCode 凑成一对行内代码而白捡一层保护。
+test('制表符开启并闭合的围栏仍被认出', () => {
+  const body = '\t```js\n\tconst s = `[[笔记]]`;\n\t```\n\n[[笔记]]';
+  const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(out.includes('const s = `[[笔记]]`;'), out);
+  assert.equal(out.split('[目标文章]').length - 1, 1, out);
+});
