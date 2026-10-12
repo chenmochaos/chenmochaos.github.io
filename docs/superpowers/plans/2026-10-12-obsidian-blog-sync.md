@@ -78,11 +78,13 @@ pnpm add -D js-yaml
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "test": "node --test \"scripts/sync/**/*.test.mjs\""
+    "test": "node --test"
   },
 ```
 
-> **注意**：不要写成 `node --test scripts/sync`。本机 Node v24.15.0 不再把 `--test` 的位置参数当目录扫描，而是当模块路径直接加载，会报 `Cannot find module '.../scripts/sync'`。必须用 glob 形式（`**` 能匹配零层目录，后续新增的子目录测试文件也会被收进来）。
+> **注意**：不要写成 `node --test scripts/sync`。本机 Node v24.15.0 不再把 `--test` 的位置参数当目录扫描，而是当模块路径直接加载，会报 `Cannot find module '.../scripts/sync'`；带 glob 的写法（`node --test "scripts/sync/**/*.test.mjs"`）虽然可用，但依赖 Node 自己解析 glob 且易被 shell 展开破坏。裸 `node --test` 从当前目录递归发现测试文件（自动排除 `node_modules`），对后续任务新增的测试文件同样自动生效，是本机验证过的三种写法里唯一没有失败模式的。
+>
+> 验证环境为 Node v24.15.0。
 
 - [ ] **Step 2: 写失败的测试**
 
@@ -123,7 +125,7 @@ test('显式 slug 属性优先且合法时通过', () => {
 test('显式 slug 属性非法时报错', () => {
   const result = resolveSlug({ slugProperty: 'My Post', basename: 'x' });
   assert.equal(result.slug, null);
-  assert.match(result.error, /slug 属性格式非法/);
+  assert.equal(result.error, 'slug 属性格式非法：「My Post」，只允许小写字母、数字与短横线');
 });
 
 test('无 slug 属性时回退到文件名', () => {
@@ -136,11 +138,13 @@ test('无 slug 属性时回退到文件名', () => {
 test('文件名推不出 slug 时报错并要求补属性', () => {
   const result = resolveSlug({ slugProperty: undefined, basename: '中文标题' });
   assert.equal(result.slug, null);
-  assert.match(result.error, /请.*填写 slug/);
+  assert.equal(result.error, '文件名「中文标题」无法生成 slug（含非 ASCII 字符），请在笔记属性里填写 slug');
 });
 
 test('推出来的 slug 长度不足 2 也报错', () => {
-  assert.equal(resolveSlug({ slugProperty: undefined, basename: 'x' }).slug, null);
+  const result = resolveSlug({ slugProperty: undefined, basename: 'x' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, '文件名「x」无法生成 slug（含非 ASCII 字符），请在笔记属性里填写 slug');
 });
 
 test('空字符串 slug 属性视为未填写', () => {
@@ -148,6 +152,46 @@ test('空字符串 slug 属性视为未填写', () => {
     slug: 'hello',
     error: null,
   });
+});
+
+test('布尔型 slug 属性被拒绝（YAML 裸写 slug: true 解析为布尔）', () => {
+  const result = resolveSlug({ slugProperty: true, basename: 'fallback' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, 'slug 属性格式非法：必须是字符串，当前是 boolean');
+});
+
+test('数字型 slug 属性被拒绝', () => {
+  const result = resolveSlug({ slugProperty: 2024, basename: 'fallback' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, 'slug 属性格式非法：必须是字符串，当前是 number');
+});
+
+test('列表型 slug 属性被拒绝（哪怕只有一个元素）', () => {
+  const result = resolveSlug({ slugProperty: ['my-post'], basename: 'fallback' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, 'slug 属性格式非法：必须是字符串，当前是 列表');
+});
+
+test('显式 slug 的边界形式一律拒绝', () => {
+  for (const bad of ['-lead', 'trail-', 'my--post', 'my_post', 'My-Post', 'a b', 'a/b']) {
+    const result = resolveSlug({ slugProperty: bad, basename: 'x' });
+    assert.equal(result.slug, null, `应拒绝「${bad}」`);
+    assert.equal(result.error, `slug 属性格式非法：「${bad}」，只允许小写字母、数字与短横线`);
+  }
+});
+
+test('推导出的 slug 满足安全不变式：要么长度不足 2，要么形如 SLUG_RE', () => {
+  // 与模块内的 SLUG_RE 保持同一形态：该不变式保证 slug 拼进
+  // src/content/posts/<slug>.md 后不可能越出目录（无 `/`、无 `..`）。
+  const SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const inputs = ['A B', '已有--双横线', '---', '   ', 'a', 'MiXeD CaSe 123', 'emoji 😀 name', '_'];
+  for (const input of inputs) {
+    const derived = slugFromFilename(input);
+    assert.ok(
+      derived.length < 2 || SLUG_SHAPE.test(derived),
+      `「${input}」→「${derived}」不满足不变式`,
+    );
+  }
 });
 ```
 
@@ -179,10 +223,16 @@ export function slugFromFilename(basename) {
 /**
  * 解析一篇笔记最终使用的 slug。note: { slugProperty, basename }
  * 返回 { slug, error }，两者必有其一为 null。
+ * slugProperty 只接受字符串：Obsidian 属性面板允许布尔/数字/列表类型，
+ * YAML 里裸写 `slug: true` 会解析成布尔 true，若放行就会把文章发到 /posts/true。
  */
 export function resolveSlug({ slugProperty, basename }) {
-  const explicit =
-    slugProperty === undefined || slugProperty === null ? '' : String(slugProperty).trim();
+  if (slugProperty !== undefined && slugProperty !== null && typeof slugProperty !== 'string') {
+    const kind = Array.isArray(slugProperty) ? '列表' : typeof slugProperty;
+    return { slug: null, error: `slug 属性格式非法：必须是字符串，当前是 ${kind}` };
+  }
+
+  const explicit = slugProperty === undefined || slugProperty === null ? '' : slugProperty.trim();
 
   if (explicit !== '') {
     if (!SLUG_RE.test(explicit)) {
@@ -208,7 +258,7 @@ export function resolveSlug({ slugProperty, basename }) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— `# pass 11`（`fail 0`）
+Expected: PASS —— `# pass 16`（`fail 0`）
 
 - [ ] **Step 6: 提交**
 
@@ -502,7 +552,7 @@ export function buildOutput({ frontmatter, body }) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 11 + 18 = 29 项通过
+Expected: PASS —— 累计 16 + 18 = 34 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -836,7 +886,7 @@ export function detectUnsupportedSyntax(body, sourceRel) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 29 + 22 = 51 项通过
+Expected: PASS —— 累计 34 + 22 = 56 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1025,7 +1075,7 @@ export function buildIndexes(scanned) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 51 + 6 = 57 项通过
+Expected: PASS —— 累计 56 + 6 = 62 项通过
 
 - [ ] **Step 6: 提交**
 
@@ -1144,7 +1194,7 @@ export function saveManifest(config, manifest) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 57 + 5 = 62 项通过
+Expected: PASS —— 累计 62 + 5 = 67 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1777,7 +1827,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 62 + 13 = 75 项通过
+Expected: PASS —— 累计 67 + 13 = 80 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
