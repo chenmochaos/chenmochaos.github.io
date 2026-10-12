@@ -1,6 +1,15 @@
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
+ * 判断一个值是否是本工具认可的 slug 形态。
+ * 给「读回来的数据」用：manifest 是用户可见的手写文件，里面的键不能直接拿去拼路径——
+ * `..`、`a/../../../docs` 经 path.join 归一化后足以跳出目标目录。非字符串一律不算。
+ */
+export function isValidSlug(value) {
+  return typeof value === 'string' && SLUG_RE.test(value);
+}
+
+/**
  * 由文件名推导 slug：小写、空白与下划线转短横线、剔除 ASCII 外字符、折叠并裁掉首尾短横线。
  * 纯中文文件名会得到空串，由调用方报错要求显式填写 slug。
  */

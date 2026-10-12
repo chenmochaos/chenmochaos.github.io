@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { scanVault, buildIndexes } from './vault.mjs';
-import { resolveSlug } from './slug.mjs';
+import { resolveSlug, isValidSlug } from './slug.mjs';
 import {
   parseNote,
   normalizePubDate,
@@ -56,6 +56,29 @@ export function buildPublishedMap(notes) {
     }
   }
   return map;
+}
+
+/**
+ * 清单里记的图片路径同样是不可信输入：applySync 会把它直接喂给 `fs.rmSync`（非递归，但越界就删到仓库外）。
+ * 只放行归一化后仍落在仓库内的路径，其余丢弃并警告——清单被改坏时，少删一个文件远好过删错一个文件。
+ *
+ * 风险的另一半在删除循环里：那里是**键**（而不是值）参与拼路径，且用的是递归删除，所以校验必须发生在
+ * 拼路径之前、以「不生成动作」的形式生效（runSync 不检查 plan.errors 就落盘）。
+ */
+function safeRecordedImages(config, slug, images, warnings) {
+  if (!Array.isArray(images)) return [];
+  const rootAbs = path.resolve(config.repoRoot);
+  const kept = [];
+  for (const image of images) {
+    if (typeof image !== 'string') continue;
+    const abs = path.resolve(rootAbs, image);
+    if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
+      warnings.push(`清单里「${slug}」记录的图片路径 ${image} 落在仓库之外，已忽略该条：清单可能被手工改过`);
+      continue;
+    }
+    kept.push(image);
+  }
+  return kept;
 }
 
 /**
@@ -177,23 +200,32 @@ export function planSync(config) {
     });
 
     const outputPath = path.join(config.contentDirAbs, `${note.slug}.md`);
-    const entry = manifest.entries[note.slug];
-    const exists = fs.existsSync(outputPath);
+    const previousContent = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : null;
 
-    // 目标存在但不在清单里 → 与手写文章冲突，拒绝覆盖
-    if (exists && !entry) {
+    // 清单经 JSON.parse 读回，是普通对象：`entries['constructor']` 会命中 Object.prototype 上的成员，
+    // 使下面那条「目标已存在而清单里没记」的保护失效（本体允许的 slug 形态并不排除 constructor）。
+    // 必须按**自有键**判断，不能只看取值是否为真。
+    const entry = Object.hasOwn(manifest.entries, note.slug) ? manifest.entries[note.slug] : null;
+
+    // 目标存在、清单里没记、内容又和本次要写的不一致 → 判定为与手写文章冲突，拒绝覆盖。
+    // 内容一致时不算冲突：applySync 先写文件、后存清单，中途失败（磁盘满、Ctrl-C、附件被删）会留下
+    // 「文件已生成、清单没记」的孤儿产物。对它报「请改用别的 slug」是误导，用户还会卡在一个自己删不掉的
+    // 状态里（下次同步照样报错）。认领它——本轮按 skip 处理并补上清单条目——才是应有的恢复动作。
+    if (previousContent !== null && entry === null && previousContent !== content) {
       errors.push(
-        `slug「${note.slug}」的目标文件 ${config.contentDir}/${note.slug}.md 已存在且不是生成文件，拒绝覆盖（请改用别的 slug）`
+        `slug「${note.slug}」的目标文件 ${config.contentDir}/${note.slug}.md 已存在、内容与本次生成的也不同，` +
+          `拒绝覆盖：它可能是你手写的文章（请改用别的 slug），也可能是上次同步中断留下的残骸（删掉该文件再同步即可）`
       );
       continue;
     }
 
-    const previousContent = exists ? fs.readFileSync(outputPath, 'utf8') : null;
-    if (entry && previousContent !== null && hashText(previousContent) !== entry.outputHash) {
+    const type = previousContent === null ? 'create' : previousContent === content ? 'skip' : 'update';
+    // 只在真要覆写时告警：type 为 skip 说明磁盘内容与本次生成的一致（清单里的哈希过期或缺失），
+    // 这时文件并没有被改过，报「被手工改过」是假警报。
+    if (type === 'update' && hashText(previousContent) !== entry.outputHash) {
       warnings.push(`${note.relPath}: 生成文件 ${note.slug}.md 被手工改过，将以 vault 为准覆盖`);
     }
 
-    const type = previousContent === null ? 'create' : previousContent === content ? 'skip' : 'update';
     actions.push({
       type,
       slug: note.slug,
@@ -202,7 +234,7 @@ export function planSync(config) {
       content,
       outputHash: hashText(content),
       images: [...imagePlan.entries()].map(([sourceAbs, planned]) => ({ sourceAbs, ...planned })),
-      previousImages: entry?.images ?? [],
+      previousImages: safeRecordedImages(config, note.slug, entry?.images, warnings),
       warnings: noteWarnings,
     });
   }
@@ -218,7 +250,21 @@ export function planSync(config) {
   // 两道闸都靠**不生成删除动作**实现，而不是 push 一条 error：runSync 调用 applySync 之前并不检查
   // plan.errors，错误只影响退出码，靠 error 挡的话文件已经删完了（spec §7.6/§7.7）。
   const currentSlugs = new Set(finalNotes.map((note) => note.slug));
-  const staleSlugs = Object.keys(manifest.entries).filter((slug) => !currentSlugs.has(slug));
+  // 清单的键是不可信输入：删除路径由它反推，而删除侧执行的是 `rmSync(..., { recursive: true })`。
+  // 键为 `..` 时 path.join(imagesDir, '..') 恰好是 imagesDir 的父目录，键为 `a/../../../docs` 时
+  // 归一化到仓库根下的 docs/——一次手工笔误就能递归删掉仓库外的任意目录。形态不对的键不生成任何动作。
+  const staleSlugs = [];
+  for (const slug of Object.keys(manifest.entries)) {
+    if (currentSlugs.has(slug)) continue;
+    if (!isValidSlug(slug)) {
+      errors.push(
+        `清单里有一条不合法的键 ${JSON.stringify(slug)}（slug 只允许小写字母、数字与短横线），已跳过：` +
+          `它可能是手工编辑或合并冲突留下的，请从 ${config.manifestPath} 中移除该条。`
+      );
+      continue;
+    }
+    staleSlugs.push(slug);
+  }
   const unreadableDirs = warnings.filter((warning) => warning.startsWith(UNREADABLE_DIR_PREFIX));
 
   if (staleSlugs.length > 0 && noteFiles.length === 0) {
@@ -272,7 +318,7 @@ export function planSync(config) {
         content: null,
         outputHash: null,
         images: [],
-        previousImages: entry.images ?? [],
+        // 删除分支整目录清掉 public/images/<slug>/，不读 previousImages，这个字段刻意不留
         warnings: [],
       });
     }

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { makeConfig } from './config.mjs';
 import { planSync, runSync, formatReport } from './sync.mjs';
-import { main } from '../sync-obsidian.mjs';
+import { main, parseArgs } from '../sync-obsidian.mjs';
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 
@@ -75,6 +75,11 @@ test('首次同步生成 .md、拷贝图片并写入 manifest', () => {
   assert.equal(manifest.entries['my-post'].output, 'src/content/posts/my-post.md');
   assert.deepEqual(manifest.entries['my-post'].images, ['public/images/my-post/shot.png']);
 
+  // 再同步一次：图片仍在被引用、清单里也记着它——「清理上一篇产物」的循环绝不能把它删掉
+  const second = runSync(config);
+  assert.equal(second.skipped.length, 1);
+  assert.ok(fs.existsSync(imagePath));
+
   assert.equal(result.created.length, 1);
   assert.deepEqual(result.errors, []);
   fs.rmSync(root, { recursive: true, force: true });
@@ -92,7 +97,7 @@ test('内容未变时第二次同步不改写文件', () => {
   const second = runSync(config);
   assert.equal(second.skipped.length, 1);
   assert.equal(second.created.length + second.updated.length, 0);
-  assert.ok(fs.statSync(target).mtimeMs <= firstMtime + 1000);
+  assert.equal(fs.statSync(target).mtimeMs, firstMtime); // 精确相等：1 秒容差会把「重写同名文件」放过去
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -264,6 +269,7 @@ test('formatReport 汇总各状态并逐条列出问题', () => {
     errors: ['STX/e.md: 请在笔记属性里填写 slug'],
   });
   assert.match(report, /试运行/);
+  assert.match(report, /同步 4 篇/);
   assert.match(report, /新建\s+a\.md/);
   assert.match(report, /更新\s+b\.md\s+← STX\/b\.md\s+\(附件 2\)/);
   assert.match(report, /跳过\s+c\.md/);
@@ -410,6 +416,7 @@ test('生成文件被手工改过后取消发布不会静默删除', () => {
   assert.equal(result.deleted.length, 0);
   assert.match(fs.readFileSync(generated, 'utf8'), /我手写的一段补充/); // 改动还在
   assert.ok(result.warnings.some((warning) => /手工改过/.test(warning)));
+  assert.ok(result.warnings.some((warning) => /内容哈希与清单记录不符/.test(warning))); // 哈希在、只是对不上
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -433,5 +440,174 @@ test('生成文件已不在磁盘上时，清单条目照常被清理', () => {
   assert.equal(result.deleted.length, 1); // 动作照常生成，applySync 对不存在的文件是 no-op
   assert.equal(result.warnings.length, 0);
   assert.deepEqual(JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8')).entries, {});
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 清单是可手写的文件（本工具自己的报错文案就在教用户手工删条目），所以它的键是不可信输入。
+// 删除路径由键反推，而删除侧执行的是 rmSync(recursive)：键为 `..` 时 path.join(imagesDir, '..')
+// 恰好是 public/，键为 `a/../../../docs` 时归一化到仓库根下的 docs/。既有两道闸都拦不住——
+// 「记录路径 vs 推导路径」的两个值都由同一个键推出（自洽即放行），哈希闸在文件不存在时也放行。
+test('清单里不合 slug 形态的键不参与删除，仓库外的目录不会被牵连', () => {
+  const { root, config, repoRoot } = makeFixture(
+    { 'STX/keep.md': '---\npublish: false\nslug: keep\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n' },
+    { 'public/cv/resume.pdf': 'valuable', 'docs/important.txt': 'valuable' }
+  );
+  fs.writeFileSync(
+    config.manifestAbs,
+    JSON.stringify(
+      {
+        version: 1,
+        entries: {
+          '..': { source: 'STX/gone.md', output: 'src/content/posts/...md', outputHash: 'sha256:x', images: [] },
+          'a/../../../docs': { source: 'STX/gone.md', output: 'src/docs.md', outputHash: 'sha256:x', images: [] },
+        },
+      },
+      null,
+      2
+    )
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.equal(result.errors.length, 2);
+  assert.ok(result.errors.some((error) => error.includes('".."')));
+  assert.ok(fs.existsSync(path.join(repoRoot, 'public/cv/resume.pdf')));
+  assert.ok(fs.existsSync(path.join(repoRoot, 'docs/important.txt')));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 键之外，清单的**值**同样不可信：entry.images 里的路径会被 applySync 直接喂给 fs.rmSync。
+test('清单里记录的图片路径跳出仓库时忽略该条并警告', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件，被篡改的清单指向它
+
+  const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
+  manifest.entries.a.images = ['../outside.png'];
+  fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
+
+  const result = runSync(config);
+
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /落在仓库之外/);
+  assert.ok(fs.existsSync(path.join(root, 'outside.png')));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// manifest.entries 是 JSON.parse 出来的普通对象：`entries['constructor']` 会命中
+// Object.prototype.constructor（真值），只看 `!entry` 就会让「目标已存在而清单里没记」的保护失效。
+test('slug 与 Object.prototype 成员同名时，手写文章仍不会被覆盖', () => {
+  const { root, config } = makeFixture(
+    { 'STX/x.md': '---\npublish: true\ntitle: X\nslug: constructor\npubDate: 2026-01-01\n---\n\n生成正文\n' },
+    { 'src/content/posts/constructor.md': '# 我手写的文章\n' }
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.created.length + result.updated.length + result.skipped.length, 0);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /已存在/);
+  assert.equal(fs.readFileSync(path.join(config.contentDirAbs, 'constructor.md'), 'utf8'), '# 我手写的文章\n');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// applySync 先写文件、后存清单：中途失败（磁盘满、Ctrl-C、附件被删）会留下「文件已生成、清单没记」
+// 的孤儿产物。对它报「请改用别的 slug」是误导，用户还会卡在一个自己删不掉的状态里。
+test('清单缺失但磁盘上已有内容一致的生成物时认领它，而不是报错卡住', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  const generated = fs.readFileSync(path.join(config.contentDirAbs, 'a.md'), 'utf8');
+  fs.rmSync(config.manifestAbs); // 模拟清单没来得及保存
+
+  const result = runSync(config);
+
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.skipped.length, 1);
+  assert.equal(result.created.length, 0);
+  assert.equal(fs.readFileSync(path.join(config.contentDirAbs, 'a.md'), 'utf8'), generated);
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8')).entries), ['a']);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// `--dry-run`（rsync/git 的习惯写法）曾被静默当成真实同步跑掉，而这个命令会删文件。
+test('parseArgs 接受 --dry 与 --dry-run，未知参数直接报错', () => {
+  assert.deepEqual(parseArgs([]), { dryRun: false });
+  assert.deepEqual(parseArgs(['--dry']), { dryRun: true });
+  assert.deepEqual(parseArgs(['--dry-run']), { dryRun: true });
+  assert.deepEqual(parseArgs(['--dry', '--dry-run']), { dryRun: true });
+  assert.match(parseArgs(['--dryrun']).error, /未知参数 --dryrun/);
+  assert.match(parseArgs(['--dry-run', '--force']).error, /未知参数 --force/);
+});
+
+test('main 把错误映射成非零退出码，仅有警告时为 0 且不打印「无警告无错误」', () => {
+  const capture = () => ({
+    text: '',
+    write(chunk) {
+      this.text += chunk;
+    },
+  });
+
+  const failing = makeFixture({ 'STX/未命名.md': '---\npublish: true\ntitle: X\npubDate: 2026-01-01\n---\n\n正文\n' });
+  const failOut = capture();
+  const failErr = capture();
+  assert.equal(main(failing.config, { out: failOut, err: failErr }), 1);
+  assert.match(failOut.text, /❌ 错误 1/);
+  assert.equal(failErr.text, '');
+
+  const warning = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n[[未发布的笔记]]\n',
+  });
+  const warnOut = capture();
+  assert.equal(main(warning.config, { out: warnOut, err: capture() }), 0);
+  assert.match(warnOut.text, /⚠️ 警告 1/);
+  assert.ok(!warnOut.text.includes('✅')); // 有警告就不是「无警告无错误」
+
+  fs.rmSync(failing.root, { recursive: true, force: true });
+  fs.rmSync(warning.root, { recursive: true, force: true });
+});
+
+// 「哈希不符」与「清单里根本没记哈希」是两种病：前者是文件被改过，后者是清单坏了。
+test('清单条目缺 outputHash 时按「清单记录不全」告警，不混说成「内容不符」', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
+  delete manifest.entries.a.outputHash;
+  fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 0);
+  assert.ok(fs.existsSync(path.join(config.contentDirAbs, 'a.md')));
+  assert.ok(result.warnings.some((w) => /清单里没有记录它的哈希/.test(w)));
+  assert.ok(!result.warnings.some((w) => /内容哈希与清单记录不符/.test(w)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+// 清单里的哈希过期（手工编辑清单、合并解冲突出错）但磁盘内容与本次生成的一致：文件并没有被改过。
+// 旧实现只要「清单有记录」且「哈希对不上」就告警，这条假警报会让人去查一个根本没问题的文件。
+test('清单里的哈希对不上、但文件内容与生成的一致时，不报「被手工改过」', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
+  manifest.entries.a.outputHash = 'sha256:stale';
+  fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
+
+  const result = runSync(config);
+
+  assert.equal(result.skipped.length, 1);
+  assert.deepEqual(result.warnings, []);
   fs.rmSync(root, { recursive: true, force: true });
 });
