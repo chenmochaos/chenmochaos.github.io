@@ -1381,7 +1381,7 @@ test('同名附件先到先得并记录冲突警告', () => {
   assert.equal(attachments.get('shot.png'), path.join(root, 'AAA/shot.png'));
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /同名附件冲突：「zzz\/shot\.png」被忽略/);
-  // 只断言被忽略的那个，把「胜者是谁」留给注释——变异成后到先得时这条断言仍然成立
+  // 这一行只锁警告文本（改成后到先得时文本不变），胜者由上面那条 assert.equal 锁死
   assert.match(warnings[0], /一律使用「AAA\/shot\.png」/);
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -1516,8 +1516,8 @@ function toPosix(value) {
  * 的前提——readdirSync 的原始顺序由文件系统决定（ext4 是哈希序，tmpfs 是字节序），不排序就会出现
  * 「同一份 vault 在两台机器上挑中不同的同名附件」。比较器显式钉住 'en'：不传 locale 时 localeCompare
  * 跟随 $LANG/LC_ALL，同名附件的胜者乃至写进 public/images 的内容会随环境变化。这个钉子在本机测不出来
- * （ASCII 名在 'en' 与 C 下同序），换成带重音的 fixture 也只是把「测不到」换成「换个 locale 就失效」，
- * 所以由注释承担，不假装有测试覆盖。
+ * （ASCII 名在 'en' 与 C 下同序）；换成带重音的 fixture 能在本机把它测出来，但那条断言在
+ * `LC_ALL=C` 的机器上又会失效——不稳定的测试比没有更难维护，所以由注释承担，不假装有测试覆盖。
  *
  * 读不到分两档，因为代价不对称：
  * - 根目录读不到（路径拼错、盘没挂上）→ 抛错。此时「扫到 0 个文件」与「vault 是空的」无法区分，
@@ -1527,7 +1527,8 @@ function toPosix(value) {
  *   但调用方不能把「扫描结果里没有」当成「源笔记已删除」：部分扫描与完整扫描在这里无从区分，
  *   见 sync.mjs 的删除闸门。
  *
- * 只跳过 dot **目录**，dot 文件照收（`STX/.gitignore` 会成为一个附件名）——spec §4.1 认可的边界。
+ * 只跳过 dot **目录**，dot 文件照收（`STX/.gitignore` 会成为一个附件名）——spec §4.1 只约束了 dot
+ * 目录、对 dot 文件没有表态，这里是取舍不是规范背书。
  * 已知限制：不跟随符号链接（entry.isFile()/isDirectory() 对链接都返回 false），链接笔记会被静默跳过；
  * 真实 vault 唯一的链接在被排除的 .claude/ 下，暂不受影响。
  */
@@ -1655,7 +1656,7 @@ spec 合规审查通过（三个文件与本节代码块逐字节一致），代
 2. **`vaultDir` 也参与 repoRoot 解析**。原先 `config.mjs` 注释写「必须是绝对路径」，却没有任何地方保证它——`vaultDir` 成了一个靠调用方自觉的特殊字段。现在四个路径字段一视同仁，「absPath 是不是绝对路径」不再取决于配置怎么写。
 3. 根目录抛错补 `cause` 与补救提示（「请检查路径是否存在、外置盘是否已挂载」），测试同时断言这段提示。
 4. **补测试钉住跨目录的 DFS 交错序**：变体「先收完本层文件再下探子目录」能通过全部测试，而它会让根目录的 `shot.png` 与 `AAA/shot.png` 互换胜者。冲突测试同时补上「胜者是哪个」的断言（此前只断言了被忽略的那个）。
-5. 补注释说明三处此前只存在于作者脑子里的判断：dot 文件照收是 spec 认可的边界；`winner !== file.absPath` 这个当前恒真的判断为什么留着；`'en'` 钉子为何只能靠注释守（换成带重音的 fixture 只是把「测不到」换成「换个 locale 就失效」）。
+5. 补注释说明三处此前只存在于作者脑子里的判断：dot 文件照收是 spec 认可的边界；`winner !== file.absPath` 这个当前恒真的判断为什么留着；`'en'` 钉子为何只能靠注释守（带重音 fixture 能在本机测出来，但换 `LC_ALL=C` 又失效，不稳定的测试比没有更难维护）。
 
 测试数 10 → 11，累计 **86**。
 
@@ -1668,6 +1669,8 @@ spec 合规审查通过（三个文件与本节代码块逐字节一致），代
 3. **有目录读不到时（警告以「无法读取目录」开头）本次不得删除任何产物**：部分扫描与完整扫描在这里无从区分，读不到的目录里的笔记会被误判成「源已删除」，而它们只是没被读到。
 
 ---
+
+> **修订记录第三轮（注释纠偏）**：Task 4 的两个模块有三处注释与事实不符，随 Task 6 的复验轮一并修正，**只改文字、不改行为**：`localeCompare('en')` 的自述由「本机测不到」改为「跨环境不稳定」（带重音 fixture 在本机确实能杀掉该变异，只是换 `LC_ALL=C` 又失效）；dot 文件那句由「spec 认可的边界」改为明说是取舍（spec 对 dot 文件未表态）；`vault.test.mjs` 冲突测试里「把胜者是谁留给注释」是首轮修订前的残迹，与紧邻的 `assert.equal` 矛盾，改为指明胜者由哪一行锁。三处都在计划块与仓库文件里同步改，逐字节一致。
 
 ### Task 5: manifest 模块
 
@@ -2103,7 +2106,8 @@ test('formatReport 折叠重复出现的同一条警告', () => {
 });
 
 // 闸门 a：vaultDir 指向一个能读、但没有 .md 的目录时，「扫描结果里没有」不等于「源笔记已删除」。
-// 判据是「一篇 .md 都没扫到」，而不是「没有可发布的笔记」——后者见上一条测试，是正常状态。
+// 判据是「一篇 .md 都没扫到」，而不是「没有可发布的笔记」——后者是用户取消发布的正常状态，
+// 见「取消 publish 后删除生成文件与图片目录」。
 test('一篇笔记都没扫到而清单非空时，拒绝删除并报错', () => {
   const { root, config } = makeFixture({
     'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
@@ -2224,6 +2228,29 @@ test('生成文件被手工改过后取消发布不会静默删除', () => {
   assert.equal(result.deleted.length, 0);
   assert.match(fs.readFileSync(generated, 'utf8'), /我手写的一段补充/); // 改动还在
   assert.ok(result.warnings.some((warning) => /手工改过/.test(warning)));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 生成文件已被手工删除、清单条目仍在：这不算「被改过」——没有内容可保护，照常生成删除动作把
+// 清单清干净。否则条目会永远留在清单里，每次同步都当成待删项重复报告。
+test('生成文件已不在磁盘上时，清单条目照常被清理', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+  runSync(config);
+  fs.rmSync(path.join(config.contentDirAbs, 'a.md')); // 用户手工删掉了生成文件
+
+  fs.writeFileSync(
+    path.join(config.vaultDir, 'STX/a.md'),
+    '---\npublish: false\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+    'utf8'
+  );
+
+  const result = runSync(config);
+
+  assert.equal(result.deleted.length, 1); // 动作照常生成，applySync 对不存在的文件是 no-op
+  assert.equal(result.warnings.length, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8')).entries, {});
   fs.rmSync(root, { recursive: true, force: true });
 });
 ```
@@ -2493,10 +2520,13 @@ export function planSync(config) {
       // spec §7.4 的同胞条款。§7.4 承认「生成文件被手工改过」是真实会发生的事——用户可能直接
       // 在博客侧编辑「已发布」的版本。覆盖有下一轮 vault 兜底，删除没有：把用户的改动静默销毁
       // 不可逆。文件不存在不算「被改过」（生成物早被删了），照常生成动作把清单条目清掉。
-      if (fs.existsSync(outputPath) && hashText(fs.readFileSync(outputPath, 'utf8')) !== entry.outputHash) {
+      const currentHash = fs.existsSync(outputPath) ? hashText(fs.readFileSync(outputPath, 'utf8')) : null;
+      if (currentHash !== null && currentHash !== entry.outputHash) {
+        // 「不符」与「清单里根本没记」是两回事，分开说——后者是清单坏了，不是文件被改过。
+        const why = typeof entry.outputHash === 'string' ? '内容哈希与清单记录不符' : '清单里没有记录它的哈希';
         warnings.push(
-          `生成文件 ${slug}.md 被手工改过（内容哈希与清单记录不符），已跳过删除：` +
-            `确认无需保留后请手工删除该文件，并从 ${config.manifestPath} 里移除「${slug}」这一条`,
+          `生成文件 ${slug}.md 被手工改过或清单记录不全（${why}），已跳过删除：` +
+            `确认无需保留后删掉该文件即可，下次同步会自动清理 ${config.manifestPath} 里对应的条目`,
         );
         continue;
       }
@@ -2632,7 +2662,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 92 + 19 = 111 项通过
+Expected: PASS —— 累计 92 + 20 = 112 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
@@ -2719,6 +2749,21 @@ spec 合规复审判定 §7.1 的第二个合取项「文件路径等于 manifes
 2. 文件存在且 `hashText(文件内容) !== entry.outputHash` → push warning 并跳过删除。文件不存在不算「被改过」（生成物早被删了），照常生成动作清掉清单条目，保住既有的 delete-noop 行为。
 3. 新增两项测试（路径不一致、手工改过后取消发布），测试数 17 → 19，累计 **111**。
 4. spec §7.1 与 §7.3 同步改（先改文档再改实践）。
+
+复验（同一 reviewer 回看）追加的收口，同轮落库：
+
+5. **补 delete-noop 测试**（生成文件已被手工删除、清单条目仍在 → 动作照常生成、清单被清理）。上文原说「保住**既有的** delete-noop 行为」不实——行为在，但没有任何测试钉住它，而新代码里恰好有一条注释在解释这个分支。
+6. **`outputHash` 缺失时不再混说成「不符」**：拆成「内容哈希与清单记录不符」与「清单里没有记录它的哈希」两种说明；文案也改为「删掉该文件即可，下次同步会自动清理清单条目」（原来要求「并移除清单这一条」是多余的，代码里根本不需要）。
+7. **三处注释纠偏**（Task 4 的两个模块，只改文字）：`localeCompare('en')` 的自述是「跨环境不稳定」而非「本机测不到」；dot 文件那句原写「spec §4.1 认可的边界」，而 spec 对 dot 文件根本没表态，改为明说这是取舍；冲突测试里「把胜者是谁留给注释」是首轮修订前的残迹、与紧邻断言矛盾，改为指明胜者由哪一行锁。
+8. 测试数 19 → 20，累计 **112**。
+
+复验给出、我确认「记录不修」的（不再重复提出）：
+
+- **覆盖侧不做路径相等检查**：已写进 spec §7.1 的「已知残余」——现实触发需篡改清单（改 `contentDir` 会直接搞坏构建），且覆盖有 §7.4 的警告与 git 兜底，与删除侧「无声且不可逆」不对称。
+- **`formatReport` 的格式断言偏松**（表头 emoji、`✅ 无警告无错误`、`+ ~ = -` 前缀未钉住）：报告是给人读的，回归会被运行者肉眼看见，真实输出另由 Task 10 验收覆盖。
+- **未覆盖分支**：`entry.output` 非字符串的兜底、`{unsupported:true}` 接线、`uniqueImageName` 的冲突加序号。
+- **死导出** `buildPublishedMap` / `applySync`：属计划规定的 API 面。
+- **`makeConfig` 收到畸形 override**（如 `vaultDir: 42`）抛的是 Node 原生 `TypeError` 文案，不是本模块口吻——方向是「更早失败」，不改。
 
 有意不修的残余：清单被改坏且**哈希恰好也对得上**时仍会删——但这要求攻击者同时构造路径与哈希，已超出「误操作」的范畴；此时用户还有 git。
 
