@@ -478,22 +478,25 @@ test('清单里不合 slug 形态的键不参与删除，仓库外的目录不�
 });
 
 // 键之外，清单的**值**同样不可信：entry.images 里的路径会被 applySync 直接喂给 fs.rmSync。
-test('清单里记录的图片路径跳出仓库时忽略该条并警告', () => {
-  const { root, config } = makeFixture({
-    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
-  });
+// 判据是「必须在该 slug 自己的附件目录内」，不是较松的「在仓库内」：后者会放行仓库里的任意文件，
+// 也会让指向仓库根自身（`.`）的条目穿过检查，把目录递给 rmSync 并抛 EISDIR 把整次同步打断。
+test('清单里记录的图片路径不在该 slug 的附件目录内时忽略，不会删到仓库里的其他文件', () => {
+  const { root, config, repoRoot } = makeFixture(
+    { 'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n' },
+    { 'src/components/Hero.astro': '<div />\n' }
+  );
   runSync(config);
-  fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件，被篡改的清单指向它
+  fs.writeFileSync(path.join(root, 'outside.png'), PNG); // 仓库外的文件
 
   const manifest = JSON.parse(fs.readFileSync(config.manifestAbs, 'utf8'));
-  manifest.entries.a.images = ['../outside.png'];
+  manifest.entries.a.images = ['../outside.png', 'src/components/Hero.astro', '.', 42];
   fs.writeFileSync(config.manifestAbs, JSON.stringify(manifest, null, 2));
 
   const result = runSync(config);
 
-  assert.equal(result.warnings.length, 1);
-  assert.match(result.warnings[0], /落在仓库之外/);
+  assert.equal(result.warnings.filter((w) => /不在它的附件目录内/.test(w)).length, 3);
   assert.ok(fs.existsSync(path.join(root, 'outside.png')));
+  assert.ok(fs.existsSync(path.join(repoRoot, 'src/components/Hero.astro')));
   fs.rmSync(root, { recursive: true, force: true });
 });
 

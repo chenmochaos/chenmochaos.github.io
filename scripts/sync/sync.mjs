@@ -59,21 +59,27 @@ export function buildPublishedMap(notes) {
 }
 
 /**
- * 清单里记的图片路径同样是不可信输入：applySync 会把它直接喂给 `fs.rmSync`（非递归，但越界就删到仓库外）。
- * 只放行归一化后仍落在仓库内的路径，其余丢弃并警告——清单被改坏时，少删一个文件远好过删错一个文件。
+ * 清单里记的图片路径同样是不可信输入：applySync 会把它直接喂给 `fs.rmSync`。
+ * 合法值只有一种来源——本工具自己写进清单的 `public/images/<slug>/<name>`——所以判据就取这条不变量：
+ * 归一化后必须**严格落在这个 slug 自己的附件目录内**。只挡「仓库外」不够：
+ *   - 仓库里的任意文件（如 `src/components/Hero.astro`）会被一并放行并删掉，而它根本不是生成物；
+ *   - 指向仓库根自身（`.`）的条目会穿过检查，把目录递给 rmSync 并抛 EISDIR。
+ * 越界的条目丢弃并警告——清单被改坏时，少删一个文件远好过删错一个文件。
  *
  * 风险的另一半在删除循环里：那里是**键**（而不是值）参与拼路径，且用的是递归删除，所以校验必须发生在
  * 拼路径之前、以「不生成动作」的形式生效（runSync 不检查 plan.errors 就落盘）。
  */
 function safeRecordedImages(config, slug, images, warnings) {
   if (!Array.isArray(images)) return [];
-  const rootAbs = path.resolve(config.repoRoot);
+  const slugDirAbs = path.resolve(config.imagesDirAbs, slug);
   const kept = [];
   for (const image of images) {
     if (typeof image !== 'string') continue;
-    const abs = path.resolve(rootAbs, image);
-    if (abs !== rootAbs && !abs.startsWith(rootAbs + path.sep)) {
-      warnings.push(`清单里「${slug}」记录的图片路径 ${image} 落在仓库之外，已忽略该条：清单可能被手工改过`);
+    const abs = path.resolve(config.repoRoot, image);
+    if (!abs.startsWith(slugDirAbs + path.sep)) {
+      warnings.push(
+        `清单里「${slug}」记录的图片路径 ${image} 不在它的附件目录内，已忽略该条：清单可能被手工改过`
+      );
       continue;
     }
     kept.push(image);
