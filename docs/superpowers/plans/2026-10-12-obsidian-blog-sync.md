@@ -71,16 +71,18 @@ cd /home/minus/Code/Full-Stack/Projects/Blog
 pnpm add -D js-yaml
 ```
 
-然后手动编辑 `package.json` 的 `scripts`，加入 test 入口（`sync` 入口在 Task 6 再加）：
+然后编辑 `package.json` 的 `scripts`，加入 test 入口（`sync` 入口在 Task 6 再加）：
 
 ```json
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "test": "node --test scripts/sync"
+    "test": "node --test \"scripts/sync/**/*.test.mjs\""
   },
 ```
+
+> **注意**：不要写成 `node --test scripts/sync`。本机 Node v24.15.0 不再把 `--test` 的位置参数当目录扫描，而是当模块路径直接加载，会报 `Cannot find module '.../scripts/sync'`。必须用 glob 形式（`**` 能匹配零层目录，后续新增的子目录测试文件也会被收进来）。
 
 - [ ] **Step 2: 写失败的测试**
 
@@ -206,7 +208,7 @@ export function resolveSlug({ slugProperty, basename }) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— `# pass 12`（`fail 0`）
+Expected: PASS —— `# pass 11`（`fail 0`）
 
 - [ ] **Step 6: 提交**
 
@@ -500,7 +502,7 @@ export function buildOutput({ frontmatter, body }) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 全部 12 + 18 = 30 项通过
+Expected: PASS —— 累计 11 + 18 = 29 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -834,7 +836,7 @@ export function detectUnsupportedSyntax(body, sourceRel) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 30 + 22 = 52 项通过
+Expected: PASS —— 累计 29 + 22 = 51 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1023,7 +1025,7 @@ export function buildIndexes(scanned) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 52 + 6 = 58 项通过
+Expected: PASS —— 累计 51 + 6 = 57 项通过
 
 - [ ] **Step 6: 提交**
 
@@ -1142,7 +1144,7 @@ export function saveManifest(config, manifest) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 58 + 5 = 63 项通过
+Expected: PASS —— 累计 57 + 5 = 62 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1775,7 +1777,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 63 + 13 = 76 项通过
+Expected: PASS —— 累计 62 + 13 = 75 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
