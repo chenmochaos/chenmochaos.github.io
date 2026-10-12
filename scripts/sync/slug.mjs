@@ -16,10 +16,16 @@ export function slugFromFilename(basename) {
 /**
  * 解析一篇笔记最终使用的 slug。note: { slugProperty, basename }
  * 返回 { slug, error }，两者必有其一为 null。
+ * slugProperty 只接受字符串：Obsidian 属性面板允许布尔/数字/列表类型，
+ * YAML 里裸写 `slug: true` 会解析成布尔 true，若放行就会把文章发到 /posts/true。
  */
 export function resolveSlug({ slugProperty, basename }) {
-  const explicit =
-    slugProperty === undefined || slugProperty === null ? '' : String(slugProperty).trim();
+  if (slugProperty !== undefined && slugProperty !== null && typeof slugProperty !== 'string') {
+    const kind = Array.isArray(slugProperty) ? '列表' : typeof slugProperty;
+    return { slug: null, error: `slug 属性格式非法：必须是字符串，当前是 ${kind}` };
+  }
+
+  const explicit = slugProperty === undefined || slugProperty === null ? '' : slugProperty.trim();
 
   if (explicit !== '') {
     if (!SLUG_RE.test(explicit)) {

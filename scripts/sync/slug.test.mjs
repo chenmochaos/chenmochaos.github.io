@@ -32,7 +32,7 @@ test('显式 slug 属性优先且合法时通过', () => {
 test('显式 slug 属性非法时报错', () => {
   const result = resolveSlug({ slugProperty: 'My Post', basename: 'x' });
   assert.equal(result.slug, null);
-  assert.match(result.error, /slug 属性格式非法/);
+  assert.equal(result.error, 'slug 属性格式非法：「My Post」，只允许小写字母、数字与短横线');
 });
 
 test('无 slug 属性时回退到文件名', () => {
@@ -45,11 +45,13 @@ test('无 slug 属性时回退到文件名', () => {
 test('文件名推不出 slug 时报错并要求补属性', () => {
   const result = resolveSlug({ slugProperty: undefined, basename: '中文标题' });
   assert.equal(result.slug, null);
-  assert.match(result.error, /请.*填写 slug/);
+  assert.equal(result.error, '文件名「中文标题」无法生成 slug（含非 ASCII 字符），请在笔记属性里填写 slug');
 });
 
 test('推出来的 slug 长度不足 2 也报错', () => {
-  assert.equal(resolveSlug({ slugProperty: undefined, basename: 'x' }).slug, null);
+  const result = resolveSlug({ slugProperty: undefined, basename: 'x' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, '文件名「x」无法生成 slug（含非 ASCII 字符），请在笔记属性里填写 slug');
 });
 
 test('空字符串 slug 属性视为未填写', () => {
@@ -57,4 +59,44 @@ test('空字符串 slug 属性视为未填写', () => {
     slug: 'hello',
     error: null,
   });
+});
+
+test('布尔型 slug 属性被拒绝（YAML 裸写 slug: true 解析为布尔）', () => {
+  const result = resolveSlug({ slugProperty: true, basename: 'fallback' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, 'slug 属性格式非法：必须是字符串，当前是 boolean');
+});
+
+test('数字型 slug 属性被拒绝', () => {
+  const result = resolveSlug({ slugProperty: 2024, basename: 'fallback' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, 'slug 属性格式非法：必须是字符串，当前是 number');
+});
+
+test('列表型 slug 属性被拒绝（哪怕只有一个元素）', () => {
+  const result = resolveSlug({ slugProperty: ['my-post'], basename: 'fallback' });
+  assert.equal(result.slug, null);
+  assert.equal(result.error, 'slug 属性格式非法：必须是字符串，当前是 列表');
+});
+
+test('显式 slug 的边界形式一律拒绝', () => {
+  for (const bad of ['-lead', 'trail-', 'my--post', 'my_post', 'My-Post', 'a b', 'a/b']) {
+    const result = resolveSlug({ slugProperty: bad, basename: 'x' });
+    assert.equal(result.slug, null, `应拒绝「${bad}」`);
+    assert.equal(result.error, `slug 属性格式非法：「${bad}」，只允许小写字母、数字与短横线`);
+  }
+});
+
+test('推导出的 slug 满足安全不变式：要么长度不足 2，要么形如 SLUG_RE', () => {
+  // 与模块内的 SLUG_RE 保持同一形态：该不变式保证 slug 拼进
+  // src/content/posts/<slug>.md 后不可能越出目录（无 `/`、无 `..`）。
+  const SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const inputs = ['A B', '已有--双横线', '---', '   ', 'a', 'MiXeD CaSe 123', 'emoji 😀 name', '_'];
+  for (const input of inputs) {
+    const derived = slugFromFilename(input);
+    assert.ok(
+      derived.length < 2 || SLUG_SHAPE.test(derived),
+      `「${input}」→「${derived}」不满足不变式`,
+    );
+  }
 });
