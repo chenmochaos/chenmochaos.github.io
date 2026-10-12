@@ -643,6 +643,13 @@ git commit -m "feat(sync): add note parsing and frontmatter mapping"
 > 分段不再产出空段、表格内的转义竖线 `\|` 按竖线处理、空别名回退目标标题、`[[#小节]]` 生成本页锚点、
 > 笔记嵌入降级为链接、附件三态（缺失/不支持）区分、警告内嵌内容截断、`headingAnchor` 改用 `github-slugger`。
 > 修复轮按修正后的代码与测试为准，提交信息用 `fix(sync): ...`，不要沿用下面的原提交信息。
+> **修订记录第二轮（2026-10-13，`66419a8` 之后）**：代码质量审查查出闭合围栏复用了开启那套放宽正则——
+> 代码块内部一行 4 空格缩进的 ``` 或带 `> ` 前缀的 ``` 会被当成闭合标记，块被提前收掉、其后本属代码的内容被改写，
+> 违反本模块「绝不改写代码」的绝对前提（`66419a8` 引入的回归）。改为闭合判定要求与开启同上下文：
+> 块引用层数相同、缩进不超过 `max(开启缩进, 3)`；另把 `headingAnchor` 的注释订正为与实现相符（例外为同名标题、
+> 以及标题内含行内链接/图片）。已核对：本 vault 111 篇笔记在修复前后解析结果完全一致。
+> 本轮测试 34 → 36 项，提交信息同样用 `fix(sync): ...`。
+
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -925,6 +932,30 @@ test('detectUnsupportedSyntax 截断超长的命中内容', () => {
   assert.match(warning, /==高亮==/);
   assert.match(warning, /@ STX\/a\.md$/);
 });
+
+// 闭合围栏此前复用开启那套放宽正则：代码块内部一行 4 空格缩进的 ``` 或带 `> ` 的 ``` 会被当成闭合标记，
+// 块被提前收掉，其后本属代码的内容当正文改写——按 CommonMark 这两行都是字面文本（缩进超 3 空格、
+// 块引用前缀在代码块内都不作数），漏认的方向才是安全的。这是 66419a8 引入的回归。
+test('代码块内部缩进或带块引用前缀的围栏不构成闭合', () => {
+  const bodies = ['```\n    ```\nafter [[笔记]]\n```', '```\n> ```\nafter [[笔记]]\n```'];
+  for (const body of bodies) {
+    const out = transformBody(body, makeCtx({ links: { 笔记: okLink } }));
+    assert.ok(out.includes('after [[笔记]]'), out);
+    assert.equal(out.split('[目标文章]').length - 1, 0, out);
+  }
+});
+
+// 上层修复不能把合法的闭合一并挡掉：顶格开启、闭合缩进 3 空格（CommonMark 允许），
+// 以及列表项里开启与闭合同为 4 空格
+test('合法的闭合仍被认出（顶格缩进 3 空格、列表项 4 空格）', () => {
+  const shallow = transformBody('```\ncode [[笔记]]\n   ```\n\n[[笔记]]', makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(shallow.includes('code [[笔记]]'), shallow);
+  assert.equal(shallow.split('[目标文章]').length - 1, 1, shallow);
+
+  const list = transformBody('- 步骤\n\n    ```js\n    const s = `[[笔记]]`;\n    ```\n\n[[笔记]]', makeCtx({ links: { 笔记: okLink } }));
+  assert.ok(list.includes('const s = `[[笔记]]`;'), list);
+  assert.equal(list.split('[目标文章]').length - 1, 1, list);
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -943,6 +974,18 @@ import { truncate } from './note.mjs';
 const EMBED_RE = /!\[\[([^\]\n]+?)\]\]/g;
 const WIKILINK_RE = /(?<!!)\[\[([^\]\n]+?)\]\]/g;
 const CALLOUT_RE = /^(\s{0,3}>[ \t]?)\[!([A-Za-z-]+)\][+-]?[ \t]*(.*)$/;
+const FENCE_RE = /^((?:[ \t]*>[ \t]?)*[ \t]*)(`{3,}|~{3,})(.*)$/;
+
+/**
+ * 围栏的上下文。闭合判定必须与开启同上下文：代码块内部一行 4 空格缩进的 ``` 或 `> ``` 是字面文本，
+ * 不是闭合标记——按 CommonMark，块引用前缀与超过 3 空格的缩进在代码块内都不作数。
+ */
+function fenceContext(prefix) {
+  return {
+    depth: (prefix.match(/>/g) ?? []).length,
+    indent: prefix.match(/^[ \t]*/)[0].length,
+  };
+}
 
 /**
  * 按代码围栏切分，代码段标记 isCode:true，后续不做任何替换。
@@ -964,6 +1007,8 @@ export function splitByCodeFence(body) {
   let buffer = [];
   let fenceChar = null;
   let fenceLength = 0;
+  let fenceDepth = 0;
+  let fenceIndent = 0;
 
   const flush = (isCode) => {
     if (buffer.length === 0) return; // 空段只会在 join 时凭空插入一个换行
@@ -972,23 +1017,36 @@ export function splitByCodeFence(body) {
   };
 
   for (const line of body.replace(/\r\n/g, '\n').split('\n')) {
-    const marker = line.match(/^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})(.*)$/);
+    const marker = line.match(FENCE_RE);
 
     if (fenceChar === null) {
       if (marker) {
         flush(false);
-        fenceChar = marker[1][0];
-        fenceLength = marker[1].length;
+        fenceChar = marker[2][0];
+        fenceLength = marker[2].length;
+        const context = fenceContext(marker[1]);
+        fenceDepth = context.depth;
+        // 顶格围栏的闭合允许缩进到 3 空格（CommonMark 的闭合规则）；列表项里的围栏开启就带 4 空格，
+        // 所以上界取两者较大者，否则合法的闭合反被漏认、其后整篇被当成代码。
+        fenceIndent = Math.max(context.indent, 3);
       }
       buffer.push(line);
     } else {
       buffer.push(line);
+      const context = marker ? fenceContext(marker[1]) : null;
       const closes =
-        marker && marker[1][0] === fenceChar && marker[1].length >= fenceLength && marker[2].trim() === '';
+        marker &&
+        marker[2][0] === fenceChar &&
+        marker[2].length >= fenceLength &&
+        marker[3].trim() === '' &&
+        context.depth === fenceDepth &&
+        context.indent <= fenceIndent;
       if (closes) {
         flush(true);
         fenceChar = null;
         fenceLength = 0;
+        fenceDepth = 0;
+        fenceIndent = 0;
       }
     }
   }
@@ -1008,7 +1066,10 @@ export function splitInlineCode(text) {
 /**
  * 标题锚点。直接用 Astro 用的同一个库，不再手写近似：手写版会把中文标点与 ★ 之类的符号留在锚点里，
  * 而 Astro 产物 id 会把它们剔除，`[[笔记#2.3 信道极限容量 ★★ 计算重点]]` 于是指向一个不存在的锚点，
- * 点击后静默停在页首。除同名标题外（Obsidian 的锚点语法本就无法区分重名），与产物 id 完全一致。
+ * 点击后静默停在页首。
+ *
+ * 与产物 id 一致，两处例外：同名标题（Obsidian 的锚点语法无法区分重名，Astro 给第二处加 `-1` 后缀），
+ * 以及标题内含行内链接/图片（Astro 对渲染后的文本取 id，本函数拿到的是原文，`[MDN](url)` 会多出 `url`）。
  */
 export function headingAnchor(heading) {
   return slug(heading);
@@ -1149,7 +1210,7 @@ export function detectUnsupportedSyntax(body, sourceRel) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 37 + 34 = 71 项通过
+Expected: PASS —— 累计 37 + 36 = 73 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -1338,7 +1399,7 @@ export function buildIndexes(scanned) {
 - [ ] **Step 5: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 71 + 6 = 77 项通过
+Expected: PASS —— 累计 73 + 6 = 79 项通过
 
 - [ ] **Step 6: 提交**
 
@@ -1457,7 +1518,7 @@ export function saveManifest(config, manifest) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 77 + 5 = 82 项通过
+Expected: PASS —— 累计 79 + 5 = 84 项通过
 
 - [ ] **Step 5: 提交**
 
@@ -2113,7 +2174,7 @@ export function formatReport(result) {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm test`
-Expected: PASS —— 累计 82 + 14 = 96 项通过
+Expected: PASS —— 累计 84 + 14 = 98 项通过
 
 - [ ] **Step 5: 写命令行入口并加 sync 脚本**
 
