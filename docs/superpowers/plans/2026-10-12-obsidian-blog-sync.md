@@ -3579,6 +3579,20 @@ git commit -m "feat: sync obsidian posts into blog via publish property"
 
 汇报内容：同步命令、模板位置、测试笔记 `/home/minus/Wiki/Blog-Sync-Test.md` 的去留（**删除需用户确认**）、以及「是否 push 到 GitHub」由用户决定（脚本不做 git 操作）。
 
+### 端到端验收记录（2026-10-13）
+
+**没有走 Step 1–8 的「往真实 vault 写测试笔记」路线**，改成等价但零侵入的做法：仓库的**隔离副本**（同设备 `mktemp -d` + `cp -al node_modules`）+ 夹具 vault（`/tmp/e2e/vault`，含属性、内链、表格转义竖线、任务列表、嵌套列表、图片、嵌入、未发布笔记、纯中文名笔记），直接调**真实的** `runSync`（`config.mjs` 的 `repoRoot`/`vaultDir` 可覆盖）。真实 vault 上只跑了只读的 `pnpm sync --dry`。这样既覆盖同一条代码路径，又不需要往用户 vault 或仓库里写任何东西。
+
+实测结果（全部有原始输出）：新建 2 篇 + 附件拷贝 + 内链 `[[笔记|别名]]` → `[别名](/posts/<slug>)`、`#小节` 锚点与生成页 `<h3 id="小节">` 对得上；嵌入降级为链接、未发布内链降级为纯文本并告警、纯中文名笔记给出明确报错；二次同步 `~ 更新 / = 跳过`（内容哈希幂等）；改回 `publish: false` → `- 删除`，生成物与清单条目一并清理。构建 7 页含两个 `.md` 同步产物。
+
+样式用 CDP 量而非肉眼：390px 视口下 6 列宽表格 `scrollWidth 1779 > clientWidth 342`（溢出被表格自己的盒子吃掉），而 `documentElement.scrollWidth == clientWidth == 390`——**页面本身没有横向溢出**；`h4` 18px、`li.task-list-item` 无项目符号、三级嵌套列表 `square` 均与新加的 CSS 一致。
+
+**两项未完成，需用户决定**：
+1. **Task 9 的模板文件**（`/home/minus/Wiki/STX/zz_Templates/Blog-Article.md`）——属于 vault 的「写入需先确认」区域，未写。模板内容已定稿在 Task 9 Step 1。
+2. **`description` 留空时的列表页行为**：当前实现是「vault 里留空 → 回落到正文首段」；用户原话是「description 为 null 就不显示详情、页面仅展示标题」。两者对同一输入给出不同结果，需用户拍板（见下方待办）。
+
+**另**：Task 7 修复后的代码质量复核**未能完成**——那个子代理跑到一半时账户余额耗尽（HTTP 402），结论没回来。已落地的验证是我自己与实现者两边的实跑（构建 5 页、121 测试全绿、空值矩阵前后对照、plan↔仓库逐字节一致），但**没有第三方复核结论**，如实记在这里。
+
 ---
 
 ## 验收对照（spec §11）
