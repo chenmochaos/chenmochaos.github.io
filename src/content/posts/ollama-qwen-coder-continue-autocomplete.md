@@ -3,6 +3,7 @@ title: "Ollama 本地部署 Qwen-Coder-1.5b 接入 Continue 实现代码补全"
 slug: "ollama-qwen-coder-continue-autocomplete"
 description: "用 Ollama 在本地跑 Qwen2.5-Coder 1.5B，接入 VS Code 的 Continue 插件做代码补全，并用 ollama ps 验证调用链路是否真的走通。"
 pubDate: 2026-09-28
+updatedAt: 2026-10-13
 tags: ["ollama", "ai", "vscode", "linux"]
 draft: false
 syncedFrom: "STX/AI/Ollama本地部署Qwen-Coder-1.5b接入Continue实现代码补全.md"

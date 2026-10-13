@@ -5,6 +5,7 @@ import {
   parseNote,
   formatDate,
   normalizePubDate,
+  normalizeUpdatedAt,
   stripInlineMarkup,
   firstParagraph,
   truncate,
@@ -58,6 +59,17 @@ test('pubDate 优先级：pubDate > date > 文件 mtime', () => {
   assert.equal(normalizePubDate({ pubDate: '2026-10-12', date: '2025-01-01' }, mtime), '2026-10-12');
   assert.equal(normalizePubDate({ date: '2025-01-01' }, mtime), '2025-01-01');
   assert.equal(normalizePubDate({}, mtime), '2024-01-01');
+});
+
+// 比 pubDate 多一条 mtime 兜底：Linter 没配成、或这篇笔记还没被 lint 过时，产物也不该缺这个字段。
+test('updatedAt 优先级：updated > 文件 mtime', () => {
+  const mtime = new Date(2024, 0, 1);
+  assert.equal(normalizeUpdatedAt({ updated: '2026-10-13' }, mtime), '2026-10-13');
+  // js-yaml 会把 YAML 里的 2026-10-13 直接解析成 Date，这条走 formatDate 的 Date 分支
+  assert.equal(normalizeUpdatedAt({ updated: new Date(2026, 9, 13, 9, 30) }, mtime), '2026-10-13');
+  assert.equal(normalizeUpdatedAt({}, mtime), '2024-01-01');
+  // 属性值无法解析时同样回落到 mtime，而不是输出一个不合法的日期
+  assert.equal(normalizeUpdatedAt({ updated: '不是日期' }, mtime), '2024-01-01');
 });
 
 test('stripInlineMarkup 去掉链接与强调标记', () => {
@@ -183,4 +195,27 @@ test('buildOutput 无 description 时省略该字段，tags 为空时输出空�
   });
   assert.ok(!out.includes('description:'));
   assert.ok(out.includes('tags: []'));
+});
+
+test('buildOutput 把 updatedAt 排在 pubDate 之后，缺省时整行省略', () => {
+  const withUpdated = buildOutput({
+    frontmatter: {
+      title: 'A',
+      slug: 'a',
+      pubDate: '2026-01-01',
+      updatedAt: '2026-02-02',
+      tags: [],
+      syncedFrom: 'x.md',
+    },
+    body: '正文',
+  });
+  const lines = withUpdated.split('\n');
+  assert.equal(lines[lines.indexOf('pubDate: 2026-01-01') + 1], 'updatedAt: 2026-02-02');
+
+  // 手写 .mdx 走的是构建期 schema，没有这个字段；产物也不该凭空多出一行
+  const withoutUpdated = buildOutput({
+    frontmatter: { title: 'A', slug: 'a', pubDate: '2026-01-01', tags: [], syncedFrom: 'x.md' },
+    body: '正文',
+  });
+  assert.ok(!withoutUpdated.includes('updatedAt:'));
 });

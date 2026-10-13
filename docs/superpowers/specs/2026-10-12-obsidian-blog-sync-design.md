@@ -78,7 +78,9 @@ publish: false
 title: 
 slug: 
 description: 
-pubDate: 2026-10-12
+pubDate: "{{date}}"
+created: "{{date}}"
+updated: "{{date}}"
 tags: []
 ---
 ```
@@ -86,6 +88,7 @@ tags: []
 - `publish` 默认 `false`：避免写了一半的草稿被一次 `pnpm sync` 误发出去，文章写完再翻成 `true`。
 - `slug` 必填且必须是英文小写短横线格式，它决定文章 URL `/posts/<slug>`。
 - 模板所在目录 `zz_Templates` 在 `excludeDirs` 内，模板自身不会被当成文章。
+- `created` / `updated` 由核心模板的 `{{date}}` 在插入那一刻填当天日期，之后交给 **Linter 插件**（只启用 YAML Timestamp 一条规则，`lintOnSave: true`）在每次保存时维护：`created` 的来源取 `frontmatter`（已有值即为权威，不再修改），`updated` 取 `file system`（每次保存刷成真实的文件修改时间）。同步脚本只消费 `updated` → `updatedAt`；`created` 仅存在于 vault 笔记，不进博客产物。
 
 ## 5. 字段映射
 
@@ -95,6 +98,7 @@ tags: []
 | `slug` | `slug` 属性 → 文件名净化（小写、空格转 `-`、剔除 ASCII 外字符、折叠连续 `-`） | 净化为空或长度 < 2：报错并跳过，要求补 `slug` |
 | `description` | `description` → `excerpt` → 正文首个普通段落（跳过标题、图片、引用、列表行）截断 120 字 | 都取不到：**不写该字段**（列表页与详情页均不显示摘要）。留空仍然回落到正文首段（方便默认值）；要「这篇不要摘要、列表只显示标题」就显式写 `description: false`，它拦住整条回落链 |
 | `pubDate` | `pubDate` → `date` → 源文件 mtime | 归一化为 `YYYY-MM-DD` |
+| `updatedAt` | `updated` → 源文件 mtime | 归一化为 `YYYY-MM-DD`；回落 mtime 是兜底，Linter 没配成时产物也不缺这个字段。详情页在它与 `pubDate` 不同日时才显示「Updated ...」 |
 | `tags` | `tags` 数组 | 缺失或非数组时输出空数组 `tags: []`（详情页用 `tags.length > 0` 判断，空数组不渲染任何标签） |
 | `draft` | 固定 `false` | 能被同步出来即视为已发布 |
 | `syncedFrom` | 固定为源文件相对 vault 的路径 | 仅作标记；博客 schema 里声明为 `z.string().optional()` 以便可查 |

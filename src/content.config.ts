@@ -18,6 +18,7 @@ const posts = defineCollection({
     title: blankAsAbsent(z.string()),
     description: blankAsAbsent(z.string().optional()),
     pubDate: blankAsAbsent(z.coerce.date()),
+    updatedAt: blankAsAbsent(z.coerce.date().optional()),
     tags: blankAsAbsent(z.array(z.string()).optional()),
     draft: blankAsAbsent(z.boolean().default(false)),
     syncedFrom: blankAsAbsent(z.string().optional()),

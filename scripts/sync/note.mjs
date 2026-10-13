@@ -66,6 +66,16 @@ export function normalizePubDate(data, mtime) {
   return formatDate(data.pubDate) ?? formatDate(data.date) ?? formatDate(mtime);
 }
 
+/**
+ * 优先级：updated 属性 > 源文件 mtime。
+ * 回落 mtime 是兜底：Linter 没配成、或这篇笔记还没被 lint 过时，产物也不至于缺这个字段。
+ * 只取到日期粒度（formatDate 的结果）——同一篇笔记在同一天内反复同步，产物逐字节不变，
+ * 「内容未变则跳过」的快路径不会被 mtime 的时分秒打破。
+ */
+export function normalizeUpdatedAt(data, mtime) {
+  return formatDate(data.updated) ?? formatDate(mtime);
+}
+
 /** 去掉 wiki 链接、Markdown 链接与强调标记，只留可读文本。 */
 export function stripInlineMarkup(text) {
   return text
@@ -149,6 +159,10 @@ export function buildOutput({ frontmatter, body }) {
     lines.push(`description: ${yamlString(frontmatter.description)}`);
   }
   lines.push(`pubDate: ${frontmatter.pubDate}`);
+  // 与 description 同样是可选的：手写 .mdx 没有这个字段时不该凭空多出一行。
+  if (frontmatter.updatedAt !== undefined) {
+    lines.push(`updatedAt: ${frontmatter.updatedAt}`);
+  }
   lines.push(`tags: [${frontmatter.tags.map(yamlString).join(', ')}]`);
   lines.push('draft: false', `syncedFrom: ${yamlString(frontmatter.syncedFrom)}`, '---', '');
   // lines 末尾的 '' 只保证 '---' 后面有一个换行；frontmatter 与正文之间还需要一个空行，

@@ -5,6 +5,7 @@ import { resolveSlug, isValidSlug } from './slug.mjs';
 import {
   parseNote,
   normalizePubDate,
+  normalizeUpdatedAt,
   pickDescription,
   buildOutput,
   hashText,
@@ -150,7 +151,9 @@ export function planSync(config) {
 
   // 6. 为每篇待发布笔记生成产物
   for (const note of finalNotes) {
-    const pubDate = normalizePubDate(note.data, fs.statSync(note.absPath).mtime);
+    // 一次 stat 供两个字段复用：pubDate 与 updatedAt 都可能在属性缺失时回落到源文件 mtime。
+    const sourceMtime = fs.statSync(note.absPath).mtime;
+    const pubDate = normalizePubDate(note.data, sourceMtime);
     if (!pubDate) {
       errors.push(`${note.relPath}: 无法确定 pubDate，请在笔记属性里填写 pubDate`);
       continue;
@@ -199,6 +202,7 @@ export function planSync(config) {
         slug: note.slug,
         description: pickDescription(note.data, note.body, config.descriptionMaxChars),
         pubDate,
+        updatedAt: normalizeUpdatedAt(note.data, sourceMtime),
         tags: Array.isArray(note.data.tags) ? note.data.tags.map(String) : [],
         syncedFrom: note.relPath,
       },

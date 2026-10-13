@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { makeConfig } from './config.mjs';
 import { planSync, runSync, formatReport } from './sync.mjs';
+import { formatDate } from './note.mjs';
 import { main, parseArgs } from '../sync-obsidian.mjs';
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
@@ -99,6 +100,32 @@ test('内容未变时第二次同步不改写文件', () => {
   assert.equal(second.skipped.length, 1);
   assert.equal(second.created.length + second.updated.length, 0);
   assert.equal(fs.statSync(target).mtimeMs, firstMtime); // 精确相等：1 秒容差会把「重写同名文件」放过去
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('源笔记的 updated 属性成为产物的 updatedAt，位置紧跟 pubDate', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md':
+      '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\nupdated: 2026-10-13\n---\n\n正文\n',
+  });
+
+  runSync(config);
+
+  const lines = readPost(config, 'a').split('\n');
+  assert.equal(lines[lines.indexOf('pubDate: 2026-01-01') + 1], 'updatedAt: 2026-10-13');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 兜底路径：笔记还没被 Linter 处理过（属性缺失）时，用源文件 mtime 而不是让产物缺这个字段。
+// 取的是日期粒度，所以第一次同步写入的值与随后重算的值一致，「内容未变则跳过」不会被它打破。
+test('源笔记没有 updated 属性时，产物用源文件 mtime 兜底', () => {
+  const { root, config } = makeFixture({
+    'STX/a.md': '---\npublish: true\nslug: a\ntitle: A\npubDate: 2026-01-01\n---\n\n正文\n',
+  });
+
+  runSync(config);
+
+  assert.ok(readPost(config, 'a').includes(`updatedAt: ${formatDate(new Date())}`));
   fs.rmSync(root, { recursive: true, force: true });
 });
 

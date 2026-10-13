@@ -3,6 +3,7 @@ title: "Agent-Index: 对Agent基础定义的理解"
 slug: "agent-context-tool-harness"
 description: "从 Tool 与 Context 两个角度拆解 Agent 的构成，顺带聊聊 Freeform Tool Calling 与模型吞噬 Harness，并对照 Claude Code 看这套抽象如何落地。"
 pubDate: 2026-10-11
+updatedAt: 2026-10-13
 tags: ["agent", "llm", "context", "claude-code"]
 draft: false
 syncedFrom: "STX/AI/Agent/Agent-Index.md"
