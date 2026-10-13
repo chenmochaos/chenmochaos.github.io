@@ -92,16 +92,40 @@ pnpm preview      # Preview production build locally
 ```
 
 ## Content Authoring
-Articles are MDX files in `src/content/posts/`. Frontmatter schema:
+手写文章是 `src/content/posts/` 下的 `.mdx`。Frontmatter schema:
 ```yaml
 ---
 title: "Article Title"
-description: "Short excerpt for the list view"
+description: "Short excerpt for the list view"   # 可省略；留空也可以，列表页只显示标题与日期
 pubDate: 2024-01-15
-tags: ["web3", "dev"]
+tags: ["web3", "dev"]                            # 可省略
 draft: false
 ---
 ```
+
+同步进来的文章是 `.md`（见下一节），**不要手改**。
+
+## 内容同步（Obsidian → 博客）
+
+文章源在 Obsidian vault `/home/minus/Wiki`。在笔记属性里把 `publish` 设为 `true`，然后：
+
+```bash
+pnpm sync          # 同步进 src/content/posts/ 与 public/images/
+pnpm sync --dry    # 只预览，不写盘
+```
+
+`src/content/posts/` 下的 `*.md` 是生成文件（frontmatter 有 `syncedFrom` 标记），**禁止手改**——改动会在下次同步被覆盖。要改内容改 vault 里的源笔记。手写文章用 `.mdx`，同步产物用 `.md`：`.mdx` 走 JSX 解析，Obsidian 正文里的 `<` 或 `{` 会让构建失败。
+
+- 同步开关：笔记属性 `publish: true`
+- 必填属性：`slug`（英文小写短横线，决定 URL）、`pubDate`
+- 可选属性：`title`（缺省用文件名）、`description`（缺省用 `excerpt` 或正文首段；都取不到则该字段省略，列表页只显示标题）、`tags`
+- 内链 `[[已发布笔记]]` 转成博客超链接（支持 `|别名`、`#小节`，锚点与 Astro 产物 id 一致）；指向未发布笔记的内链降级为纯文本并在报告中警告
+- 图片 `![[图.png]]` 拷进 `public/images/<slug>/`
+- 表格里的转义竖线 `[[笔记\|别名]]` 与普通竖线等价（Obsidian 在表格内自动转义，用户无法避免）
+- 笔记嵌入 `![[笔记]]` / `![[笔记#小节]]` 降级为指向该文章的链接，不做内联展开
+- 不支持：`%%注释%%`、`==高亮==`、图片尺寸语法 `![[图|300]]`、非图片附件（报告里记「不支持的附件」，与「无法解析嵌入引用」区分开）
+- 生成物清单在 `.sync-manifest.json`，只有清单内的文件会被同步删除
+- 脚本不执行 git 命令，commit 与 push 始终手动
 
 ## Rules
 - No JS animation libraries — CSS transitions and Astro View Transitions only
