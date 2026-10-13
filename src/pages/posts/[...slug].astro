@@ -11,14 +11,18 @@ export async function getStaticPaths() {
 }
 
 const { post } = Astro.props;
-const { Content } = await render(post);
+// headings 由 Astro 的 rehype-collect-headings 产出，slug 用的就是 github-slugger，
+// 与渲染进 HTML 的标题 id 同源 —— 目录锚点无需自己再算一遍。
+const { Content, headings } = await render(post);
 ---
 
 <PostLayout
   title={post.data.title}
   description={post.data.description}
   pubDate={post.data.pubDate}
+  updatedAt={post.data.updatedAt}
   tags={post.data.tags}
+  headings={headings}
 >
   <Content />
 </PostLayout>

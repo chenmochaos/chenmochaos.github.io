@@ -13,6 +13,9 @@
   --font-sans: 'Inter', system-ui, sans-serif;
 
   --max-width-content: 800px;
+  /* 文章页专用：正文两侧各让出约 264px，右侧那一列放大纲目录。
+     中间列写死 47rem(752px)（见 PostLayout），所以正文在宽屏下与单列时逐像素等宽、仍然居中。 */
+  --max-width-wide: 83rem;
 }
 
 @layer base {

@@ -5,9 +5,15 @@ import '../styles/global.css';
 interface Props {
   title: string;
   description?: string;
+  /**
+   * 放宽内容列宽度，给右侧大纲目录腾地方。默认 false —— 首页等其它页面
+   * 保持 800px 单列不变，只有文章详情页需要这条更宽的轨道。
+   * 只在 xl 及以上放宽：窄屏不显示目录，放宽只会把正文拉成过长的行宽。
+   */
+  wide?: boolean;
 }
 
-const { title, description = 'Personal blog & digital garden' } = Astro.props;
+const { title, description = 'Personal blog & digital garden', wide = false } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 ---
 
@@ -32,7 +38,10 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
     <ClientRouter />
   </head>
   <body class="min-h-screen">
-    <main class="max-w-content mx-auto px-6" transition:animate="fade">
+    <main
+      class:list={['mx-auto px-6 max-w-content', wide && 'xl:max-w-wide']}
+      transition:animate="fade"
+    >
       <slot />
     </main>
     <script>

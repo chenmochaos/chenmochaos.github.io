@@ -1,72 +1,105 @@
 ---
 import BaseLayout from './BaseLayout.astro';
+import TableOfContents from '../components/TableOfContents.astro';
 
 interface Props {
   title: string;
   description?: string;
   pubDate: Date;
+  updatedAt?: Date;
   tags?: string[];
+  headings: { depth: number; slug: string; text: string }[];
 }
 
-const { title, description, pubDate, tags } = Astro.props;
+const { title, description, pubDate, updatedAt, tags, headings } = Astro.props;
+
+// 同一天不显示「Updated」：刚发出来就挂上一行更新日期是噪音。
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const updatedAtLabel =
+  updatedAt && !sameDay(updatedAt, pubDate)
+    ? updatedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
 ---
 
-<BaseLayout title={`${title} — Minus`} description={description}>
-  <article class="py-20 animate-fade-in-up">
-    <header class="mb-12">
-      <a
-        href="/"
-        class="text-text-dim hover:text-accent transition-colors duration-200 text-sm inline-flex items-center gap-1 mb-8"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 12H5" />
-          <path d="m12 19-7-7 7-7" />
-        </svg>
-        Back
-      </a>
-      <h1 class="text-4xl md:text-5xl font-bold tracking-tight">{title}</h1>
-      <div class="flex items-center gap-4 mt-4">
-        <time datetime={pubDate.toISOString()} class="text-text-dim text-sm">
-          {pubDate.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
-        </time>
-        {tags && tags.length > 0 && (
-          <div class="flex gap-2">
-            {tags.map((tag) => (
-              <span class="text-xs text-text-dim bg-bg-card border border-border px-2 py-0.5 rounded-full">
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
+<BaseLayout wide title={`${title} — Minus`} description={description}>
+  {/* 三列：两侧 1fr 均分，中间写死 47rem(752px) —— 即 800px 的 --max-width-content 减去 main
+      的 px-6 两侧留白，也就是加目录之前正文实际占的宽度，所以正文逐像素没变、仍然居中，
+      右侧空出来的那一列放大纲目录。xl 以下不进入 grid，退回原来的单列布局。 */}
+  <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,47rem)_minmax(0,1fr)]">
+    <article class="py-20 animate-fade-in-up xl:col-start-2">
+      <header class="mb-12">
+        <a
+          href="/"
+          class="text-text-dim hover:text-accent transition-colors duration-200 text-sm inline-flex items-center gap-1 mb-8"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5" />
+            <path d="m12 19-7-7 7-7" />
+          </svg>
+          Back
+        </a>
+        <h1 class="text-4xl md:text-5xl font-bold tracking-tight">{title}</h1>
+        <div class="flex items-center gap-4 mt-4">
+          <time datetime={pubDate.toISOString()} class="text-text-dim text-sm">
+            {pubDate.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </time>
+          {updatedAtLabel && (
+            <time datetime={updatedAt?.toISOString()} class="text-text-dim text-sm">
+              Updated {updatedAtLabel}
+            </time>
+          )}
+          {tags && tags.length > 0 && (
+            <div class="flex gap-2">
+              {tags.map((tag) => (
+                <span class="text-xs text-text-dim bg-bg-card border border-border px-2 py-0.5 rounded-full">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
+
+      <div class="prose-custom">
+        <slot />
       </div>
-    </header>
 
-    <div class="prose-custom">
-      <slot />
-    </div>
+      <footer class="mt-16 pt-8 border-t border-border">
+        <a
+          href="/"
+          class="text-text-dim hover:text-accent transition-colors duration-200 text-sm inline-flex items-center gap-1"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5" />
+            <path d="m12 19-7-7 7-7" />
+          </svg>
+          Back to home
+        </a>
+      </footer>
+    </article>
 
-    <footer class="mt-16 pt-8 border-t border-border">
-      <a
-        href="/"
-        class="text-text-dim hover:text-accent transition-colors duration-200 text-sm inline-flex items-center gap-1"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 12H5" />
-          <path d="m12 19-7-7 7-7" />
-        </svg>
-        Back to home
-      </a>
-    </footer>
-  </article>
+    <TableOfContents headings={headings} />
+  </div>
 </BaseLayout>
 
 <style is:global>
   .prose-custom {
     line-height: 1.8;
+  }
+
+  /* 目录锚点跳转后标题不要贴到视口顶部 —— 配合 global.css 里的 scroll-behavior: smooth。 */
+  .prose-custom h2,
+  .prose-custom h3,
+  .prose-custom h4 {
+    scroll-margin-top: 2rem;
   }
 
   .prose-custom h2 {

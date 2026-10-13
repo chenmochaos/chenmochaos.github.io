@@ -1,0 +1,161 @@
+---
+interface Props {
+  headings: { depth: number; slug: string; text: string }[];
+}
+
+const { headings } = Astro.props;
+
+// 只收 h2/h3：h1 是文章标题本身（在 header 里，不在正文），h4 及以下会让目录长到
+// 失去「一眼看清结构」的价值。过滤后为空则整个 aside 不渲染，正文回到居中单列。
+const items = headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
+---
+
+{
+  items.length > 0 && (
+    <aside class="hidden xl:block xl:col-start-3 pl-8">
+      {/* 吸顶发生在 nav 上，外层 aside 作为 grid item 保持默认的 stretch，
+          高度撑到与正文等高，sticky 才有可吸附的行程。 */}
+      <nav
+        aria-label="Table of contents"
+        class="sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto"
+      >
+        <p class="text-xs uppercase tracking-wider text-text-dim mb-3">On this page</p>
+        <ul class="border-l border-border">
+          {items.map((heading) => (
+            <li>
+              <a
+                href={`#${heading.slug}`}
+                data-toc-link
+                class:list={[
+                  // -ml-px 让链接自己的左边框正好压在 ul 的左边框上，成为「点亮当前项」的指示条
+                  'block py-1.5 -ml-px border-l border-transparent text-text-dim hover:text-text transition-colors duration-200 leading-snug',
+                  heading.depth === 3 ? 'pl-6 text-[0.8125rem]' : 'pl-3 text-sm',
+                ]}
+              >
+                {heading.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </aside>
+  )
+}
+
+<style>
+  /* 用属性选择器而非动态 class：JS 只负责增删 data-active，
+     样式留在 CSS 里，ClientRouter 换页后不需要重新计算。 */
+  [data-toc-link][data-active='true'] {
+    color: var(--color-text);
+    border-left-color: var(--color-text-dim);
+  }
+</style>
+
+<script>
+  let observer: IntersectionObserver | undefined;
+
+  const root = document.documentElement;
+
+  // 点击目录项之后、读者自己动手之前，高亮由点击接管，scroll-spy 让位。
+  // 标记挂在 documentElement 上而不是模块变量里：ClientRouter 换页时这段脚本是否重新执行
+  // 不确定，而 dataset 两种情况都只有一份，点击处与释放处读到的是同一个值。
+  const releaseClickLock = () => {
+    delete root.dataset.tocLock;
+  };
+
+  function initToc() {
+    observer?.disconnect();
+    observer = undefined;
+
+    const pairs: { link: HTMLAnchorElement; el: HTMLElement }[] = [];
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]')) {
+      link.removeAttribute('data-active');
+      link.removeAttribute('aria-current');
+      // 取 href 属性原文而不是 link.hash：hash 会把中文标题的锚点 percent-encode，
+      // 而 id 是未经编码的原文，直接用属性值才能与 getElementById 对齐。
+      const id = (link.getAttribute('href') ?? '').slice(1);
+      const el = id === '' ? null : document.getElementById(id);
+      if (el) pairs.push({ link, el });
+    }
+    if (pairs.length === 0) return;
+
+    // 落在视口上方条带内的标题 id 集合。
+    const visible = new Set<string>();
+
+    const setActive = (current) => {
+      for (const pair of pairs) {
+        if (pair === current) {
+          pair.link.setAttribute('data-active', 'true');
+          pair.link.setAttribute('aria-current', 'location');
+        } else {
+          pair.link.removeAttribute('data-active');
+          pair.link.removeAttribute('aria-current');
+        }
+      }
+    };
+
+    const applyActive = () => {
+      if (root.dataset.tocLock) return;
+
+      // 取条带里文档顺序最靠后的那一个，即「已越过阅读线的最后一节」。
+      // 不能取最靠前的：标题在滚出视口上沿之前一直满足 bottom > 0，于是一个只剩一两像素
+      // 露在顶部的标题会压过读者真正在读的那一节（点目录最后几项、或滚到文末时都能看到）。
+      let current: { link: HTMLAnchorElement; el: HTMLElement } | undefined;
+      for (const pair of pairs) if (visible.has(pair.el.id)) current = pair;
+
+      if (!current) {
+        // 条带里一个标题都没有。停在文档最顶部时必然如此 —— 文章页头（返回链接 + 大标题
+        // + 日期）自己就占了开头三百多像素。这一档点亮第一项，而不是让整份目录在打开时
+        // 没有当前项。其它情况（如停在文末）保留上一个高亮，不清空。
+        if (window.scrollY <= 0) setActive(pairs[0]);
+        return;
+      }
+      setActive(current);
+    };
+
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
+        }
+        applyActive();
+      },
+      // 判定条带 = 视口顶部往下 34% 那一条（下方留 66%），「当前小节」跟的是读者正在看的
+      // 那一段，而不是刚滚过去的那些。上边界取 0、不留偏移：这个布局顶部没有任何吸顶元素，
+      // 而点击目录项会把标题停在 scroll-margin-top(2rem) 处 —— 上边界若高于 2rem，
+      // 刚跳过去的那个标题反而落在条带之外，高亮会跳到它的下一条。
+      { rootMargin: '0px 0px -66% 0px' }
+    );
+
+    for (const pair of pairs) {
+      observer.observe(pair.el);
+      // 点的这一刻就点亮被点项，并锁住 scroll-spy。末尾几节太短，把标题滚到阅读线会撞上
+      // 文档底部，标题根本进不了判定条带 —— 纯位置规则会把高亮判给别的项。读者点了谁
+      // 就该亮谁，这一条只能由点击自己保证。
+      pair.link.addEventListener('click', () => {
+        root.dataset.tocLock = 'true';
+        setActive(pair);
+      });
+    }
+
+    // 读者一动手就把高亮交还给 scroll-spy。wheel / touchstart / keydown 覆盖滚轮、触摸与
+    // 键盘，在它们引发的滚动产生新的 intersection 之前就到达；scrollend 覆盖拖动滚动条
+    // （拖滚动条不会派发鼠标事件）。四个监听只绑一次，与上面的 tocBound 同理。
+    if (!root.dataset.tocReleaseBound) {
+      root.dataset.tocReleaseBound = 'true';
+      for (const type of ['wheel', 'touchstart', 'keydown', 'mousedown']) {
+        window.addEventListener(type, releaseClickLock, { passive: true });
+      }
+      window.addEventListener('scrollend', releaseClickLock, { passive: true });
+    }
+  }
+
+  initToc();
+
+  // ClientRouter 换页会替换 DOM。只绑一次监听，靠 initToc 自身的幂等（先 disconnect 旧 observer）收敛。
+  if (!root.dataset.tocBound) {
+    root.dataset.tocBound = 'true';
+    document.addEventListener('astro:page-load', initToc);
+  }
+</script>
