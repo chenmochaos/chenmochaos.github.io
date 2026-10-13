@@ -104,8 +104,20 @@ export function truncate(text, maxChars) {
   return chars.length > maxChars ? `${chars.slice(0, maxChars).join('')}…` : text;
 }
 
+/**
+ * `description: false` 是显式的「这篇不要摘要」。它必须**拦住整条回落链**，否则用户没有办法让
+ * 列表页只显示标题——留空会回落到正文首段（那是刻意的方便默认值，不能拿掉）。
+ * Obsidian 的属性面板对 `false` 可能存成布尔、也可能存成字符串（文本类型属性会写成 "false"），
+ * 两种都认；`False`/`FALSE` 是 YAML 的布尔写法，一并归一。
+ */
+function isNoDescription(value) {
+  if (value === false) return true;
+  return typeof value === 'string' && value.trim().toLowerCase() === 'false';
+}
+
 /** 摘要优先级：description > excerpt > 正文首段；都取不到返回 undefined（调用方省略该字段）。 */
 export function pickDescription(data, body, maxChars = 120) {
+  if (isNoDescription(data.description)) return undefined;
   for (const candidate of [data.description, data.excerpt]) {
     if (typeof candidate !== 'string') continue;
     const text = stripInlineMarkup(candidate);

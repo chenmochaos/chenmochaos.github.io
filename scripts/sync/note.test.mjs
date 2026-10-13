@@ -123,6 +123,18 @@ test('pickDescription 取不到任何内容时返回 undefined', () => {
   assert.equal(pickDescription({ description: '   ' }, ''), undefined);
 });
 
+// 用户口径两头都要留：留空 = 自动用正文首段（方便），写 false = 这篇不要摘要（能让列表只显示标题）。
+// 「不要摘要」必须连 excerpt 与正文首段一起拦住，否则它只是「换了个回落目标」，用户仍然关不掉摘要。
+test('description: false 表示「这篇不要摘要」，拦住整条回落链', () => {
+  assert.equal(pickDescription({ description: false, excerpt: '摘录' }, '正文首段'), undefined);
+  assert.equal(pickDescription({ description: 'false' }, '正文首段'), undefined); // Obsidian 文本属性存成字符串
+  assert.equal(pickDescription({ description: 'FALSE' }, '正文首段'), undefined); // YAML 的布尔大小写写法
+  // 对照：留空 / null 仍然回落到正文首段，行为不变
+  assert.equal(pickDescription({ description: '' }, '正文首段'), '正文首段');
+  assert.equal(pickDescription({ description: null }, '正文首段'), '正文首段');
+  assert.equal(pickDescription({ description: false }, '# 只有标题\n'), undefined); // 没有正文首段也不炸
+});
+
 test('pickDescription 超长时截断并加省略号', () => {
   const long = 'a'.repeat(200);
   const result = pickDescription({ description: long }, '', 120);

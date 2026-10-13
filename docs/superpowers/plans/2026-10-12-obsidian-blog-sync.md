@@ -419,6 +419,18 @@ test('pickDescription 取不到任何内容时返回 undefined', () => {
   assert.equal(pickDescription({ description: '   ' }, ''), undefined);
 });
 
+// 用户口径两头都要留：留空 = 自动用正文首段（方便），写 false = 这篇不要摘要（能让列表只显示标题）。
+// 「不要摘要」必须连 excerpt 与正文首段一起拦住，否则它只是「换了个回落目标」，用户仍然关不掉摘要。
+test('description: false 表示「这篇不要摘要」，拦住整条回落链', () => {
+  assert.equal(pickDescription({ description: false, excerpt: '摘录' }, '正文首段'), undefined);
+  assert.equal(pickDescription({ description: 'false' }, '正文首段'), undefined); // Obsidian 文本属性存成字符串
+  assert.equal(pickDescription({ description: 'FALSE' }, '正文首段'), undefined); // YAML 的布尔大小写写法
+  // 对照：留空 / null 仍然回落到正文首段，行为不变
+  assert.equal(pickDescription({ description: '' }, '正文首段'), '正文首段');
+  assert.equal(pickDescription({ description: null }, '正文首段'), '正文首段');
+  assert.equal(pickDescription({ description: false }, '# 只有标题\n'), undefined); // 没有正文首段也不炸
+});
+
 test('pickDescription 超长时截断并加省略号', () => {
   const long = 'a'.repeat(200);
   const result = pickDescription({ description: long }, '', 120);
@@ -586,8 +598,20 @@ export function truncate(text, maxChars) {
   return chars.length > maxChars ? `${chars.slice(0, maxChars).join('')}…` : text;
 }
 
+/**
+ * `description: false` 是显式的「这篇不要摘要」。它必须**拦住整条回落链**，否则用户没有办法让
+ * 列表页只显示标题——留空会回落到正文首段（那是刻意的方便默认值，不能拿掉）。
+ * Obsidian 的属性面板对 `false` 可能存成布尔、也可能存成字符串（文本类型属性会写成 "false"），
+ * 两种都认；`False`/`FALSE` 是 YAML 的布尔写法，一并归一。
+ */
+function isNoDescription(value) {
+  if (value === false) return true;
+  return typeof value === 'string' && value.trim().toLowerCase() === 'false';
+}
+
 /** 摘要优先级：description > excerpt > 正文首段；都取不到返回 undefined（调用方省略该字段）。 */
 export function pickDescription(data, body, maxChars = 120) {
+  if (isNoDescription(data.description)) return undefined;
   for (const candidate of [data.description, data.excerpt]) {
     if (typeof candidate !== 'string') continue;
     const text = stripInlineMarkup(candidate);
@@ -3381,14 +3405,14 @@ git commit -m "style(post): add table heading and task list styles"
 ### Task 9: Obsidian 模板与项目文档
 
 **Files:**
-- Create: `/home/minus/Wiki/STX/zz_Templates/Blog-Article.md`
+- Create: `/home/minus/Wiki/STX/zz_Templates/Te_Blog-Article.md`
 - Modify: `CLAUDE.md`
 
 > `STX/` 属于用户 vault 中「写入需先确认」的区域。本文件是用户在需求中明确要求的模板，写入前再向用户确认一次路径。
 
 - [ ] **Step 1: 建模板**
 
-创建 `/home/minus/Wiki/STX/zz_Templates/Blog-Article.md`：
+创建 `/home/minus/Wiki/STX/zz_Templates/Te_Blog-Article.md`（`Te_` 前缀与 vault 里既有的 `Te_日记模板.md` 一致，用户选定）：
 
 ```markdown
 ---
@@ -3404,7 +3428,8 @@ tags: []
 博客发布模板使用说明（不会同步到博客，正文从这里开始写）：
 1. slug 必填，英文小写短横线，决定文章 URL：https://chenmochaos.github.io/posts/<slug>
    （pubDate 用核心模板的 {{date}} 自动填；万一你的模板不展开它，同步会回落到笔记的修改日期，不会报错）
-2. description 可留空，留空则首页列表只显示标题与日期
+2. description 可留空：留空则自动取正文首段当摘要；想「这篇不要摘要、列表只显示标题」就写
+   `description: false`（Obsidian 属性面板存成布尔或字符串都认）
 3. 文章写完、校对无误后，把 publish 改成 true
 4. 终端执行：cd /home/minus/Code/Full-Stack/Projects/Blog && pnpm sync
 5. 检查 `pnpm sync --dry` 的报告无错误后，git commit + git push
@@ -3444,7 +3469,7 @@ pnpm sync --dry    # 只预览，不写盘
 
 - [ ] **Step 3: 验证模板能被识别**
 
-Run: `ls -l '/home/minus/Wiki/STX/zz_Templates/Blog-Article.md' && pnpm sync --dry`
+Run: `ls -l '/home/minus/Wiki/STX/zz_Templates/Te_Blog-Article.md' && pnpm sync --dry`
 Expected: 文件存在；同步报告仍是 `同步 0 篇` 且 `✅ 无警告无错误`（模板默认 `publish: false`，且 `zz_Templates` 在排除目录内）。
 
 - [ ] **Step 4: 提交**

@@ -70,7 +70,7 @@ const CONFIG = {
 6. **`cleanup()`** — 删除已取消发布/源文件已删除的生成物。
 7. **`report()`** — 打印同步结果。
 
-### 4.2 Obsidian 模板 `STX/zz_Templates/Blog-Article.md`
+### 4.2 Obsidian 模板 `STX/zz_Templates/Te_Blog-Article.md`
 
 ```markdown
 ---
@@ -93,7 +93,7 @@ tags: []
 |---|---|---|
 | `title` | `title` → 文件名（去扩展名） | 两者皆空：报错并跳过该篇 |
 | `slug` | `slug` 属性 → 文件名净化（小写、空格转 `-`、剔除 ASCII 外字符、折叠连续 `-`） | 净化为空或长度 < 2：报错并跳过，要求补 `slug` |
-| `description` | `description` → `excerpt` → 正文首个普通段落（跳过标题、图片、引用、列表行）截断 120 字 | 都取不到：**不写该字段**（列表页与详情页均不显示摘要） |
+| `description` | `description` → `excerpt` → 正文首个普通段落（跳过标题、图片、引用、列表行）截断 120 字 | 都取不到：**不写该字段**（列表页与详情页均不显示摘要）。留空仍然回落到正文首段（方便默认值）；要「这篇不要摘要、列表只显示标题」就显式写 `description: false`，它拦住整条回落链 |
 | `pubDate` | `pubDate` → `date` → 源文件 mtime | 归一化为 `YYYY-MM-DD` |
 | `tags` | `tags` 数组 | 缺失或非数组时输出空数组 `tags: []`（详情页用 `tags.length > 0` 判断，空数组不渲染任何标签） |
 | `draft` | 固定 `false` | 能被同步出来即视为已发布 |
@@ -195,7 +195,7 @@ manifest 结构：
 | `src/layouts/BaseLayout.astro` | 不改 | 已有 `description = 'Personal blog & digital garden'` 兜底，`undefined` 不会渲染成字符串 "undefined" |
 | `package.json` | 加 `"sync": "node scripts/sync-obsidian.mjs"`；devDependency 加 `js-yaml`、`github-slugger` | 入口与 YAML 解析、锚点 |
 | `CLAUDE.md` | 新增「内容同步」章节：同步命令、生成文件禁止手改、模板字段约定、`.md` 与 `.mdx` 的分工 | 约束先行，规则进文档 |
-| `STX/zz_Templates/Blog-Article.md` | 新建模板 | 用户要求 |
+| `STX/zz_Templates/Te_Blog-Article.md` | 新建模板（`Te_` 前缀与既有 `Te_日记模板.md` 一致） | 用户要求 |
 
 `.sync-manifest.json` 提交进仓库（体积小，记录生成物来源）。
 
