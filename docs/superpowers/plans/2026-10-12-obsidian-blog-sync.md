@@ -3612,9 +3612,9 @@ git commit -m "feat: sync obsidian posts into blog via publish property"
 
 样式用 CDP 量而非肉眼：390px 视口下 6 列宽表格 `scrollWidth 1779 > clientWidth 342`（溢出被表格自己的盒子吃掉），而 `documentElement.scrollWidth == clientWidth == 390`——**页面本身没有横向溢出**；`h4` 18px、`li.task-list-item` 无项目符号、三级嵌套列表 `square` 均与新加的 CSS 一致。
 
-**两项未完成，需用户决定**：
-1. **Task 9 的模板文件**（`/home/minus/Wiki/STX/zz_Templates/Blog-Article.md`）——属于 vault 的「写入需先确认」区域，未写。模板内容已定稿在 Task 9 Step 1。
-2. **`description` 留空时的列表页行为**：当前实现是「vault 里留空 → 回落到正文首段」；用户原话是「description 为 null 就不显示详情、页面仅展示标题」。两者对同一输入给出不同结果，需用户拍板（见下方待办）。
+**两项未完成，需用户决定** —— 均已于 2026-10-13 闭环：
+1. **Task 9 的模板文件**：用户确认写入，并选定 `Te_` 前缀（与 vault 里既有的 `Te_日记模板.md` 一致）→ 已写 `/home/minus/Wiki/STX/zz_Templates/Te_Blog-Article.md`，与计划块逐字节一致；`pnpm sync --dry` 仍为 `同步 0 篇 ✅ 无警告无错误`（模板默认 `publish: false` 且在 `zz_Templates` 排除目录内）。
+2. **`description` 留空时的列表页行为**：用户选择「两种都留口子」→ 留空仍回落到正文首段，显式写 `description: false` 才表示「这篇不要摘要、列表只显示标题」（`isNoDescription` 拦住整条回落链）。端到端复验（夹具 vault → 隔离副本 → 构建）实测：`description: false` 的生成物**不写** `description` 字段，首页列表项只剩标题+日期（无 `<p>`），详情页 `<meta name="description">` 回落到站点默认 `Personal blog & digital garden`；对照项 `description:` 留空仍取到正文首段 `'留空时应该拿这一段当摘要。'`，显式 `description: 手写的摘要` 照常渲染。
 
 **另**：Task 7 修复后的代码质量复核**未能完成**——那个子代理跑到一半时账户余额耗尽（HTTP 402），结论没回来。已落地的验证是我自己与实现者两边的实跑（构建 5 页、121 测试全绿、空值矩阵前后对照、plan↔仓库逐字节一致），但**没有第三方复核结论**，如实记在这里。
 
