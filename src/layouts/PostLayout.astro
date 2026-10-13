@@ -163,4 +163,81 @@ const { title, description, pubDate, tags } = Astro.props;
     border-radius: 0.5rem;
     margin: 1.5rem 0;
   }
+
+  .prose-custom h4 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+    color: var(--color-text);
+  }
+
+  .prose-custom h5 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--color-text);
+  }
+
+  .prose-custom h6 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--color-text);
+  }
+
+  .prose-custom ul ul,
+  .prose-custom ul ol,
+  .prose-custom ol ul,
+  .prose-custom ol ol {
+    margin-top: 0.25rem;
+    margin-bottom: 0;
+  }
+
+  .prose-custom ul ul li {
+    list-style-type: circle;
+  }
+
+  .prose-custom ul ul ul li {
+    list-style-type: square;
+  }
+
+  .prose-custom li.task-list-item {
+    list-style: none;
+    margin-left: -1.25rem;
+  }
+
+  .prose-custom input[type='checkbox'] {
+    margin-right: 0.5rem;
+    vertical-align: middle;
+    accent-color: var(--color-text);
+  }
+
+  .prose-custom table {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin: 1.5rem 0;
+  }
+
+  .prose-custom th,
+  .prose-custom td {
+    border: 1px solid var(--color-border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+  }
+
+  .prose-custom th {
+    background-color: var(--color-bg-card);
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .prose-custom td {
+    color: var(--color-text-muted);
+  }
 </style>
