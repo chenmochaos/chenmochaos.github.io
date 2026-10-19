@@ -1,28 +1,40 @@
 ---
-const projects = [
+type Project = {
+  name: string;
+  description: string;
+  tags: string[];
+  href?: string;
+  private?: boolean;
+};
+
+const projects: Project[] = [
   {
-    name: 'hmdp — Redis Practice',
-    description: 'Redis caching in depth — null caching for penetration, and breakdown solved two ways: hand-rolled mutex locks and logical expiry with async rebuild.',
-    tags: ['Java', 'Spring Boot', 'Redis', 'MySQL'],
-    href: 'https://github.com/chenmochaos/hmdp',
+    name: 'AXLE · Used-Car Marketplace',
+    description:
+      'Used-car platform with deep-linkable listings, Redis-backed flash sales and one-order-per-user — Vue 3 + TypeScript in front, Spring Boot + MySQL + Redis behind it.',
+    tags: ['Vue 3', 'TypeScript', 'Spring Boot', 'Redis', 'MySQL'],
+    href: 'https://github.com/chenmochaos/axle-web',
   },
   {
-    name: 'Project Beta',
-    description: 'AI-powered tool for automated code review and optimization suggestions.',
-    tags: ['Python', 'LLM', 'FastAPI'],
-    href: '#',
+    name: 'Naiwa — Claude Code Pet',
+    description:
+      'A pixel frog living in your terminal: it reacts to what happens in a Claude Code session, blocks dangerous commands, and plays a laughing easter egg after 18:00.',
+    tags: ['TypeScript', 'Claude Code', 'Python'],
+    href: 'https://github.com/chenmochaos/naiwa_cc_mod',
   },
   {
-    name: 'Project Gamma',
-    description: 'Full-stack platform for collaborative learning and knowledge sharing.',
-    tags: ['Next.js', 'PostgreSQL', 'Tailwind'],
-    href: '#',
+    name: 'Lab Agent — Booking System',
+    description:
+      'Smart lab and equipment booking: admins manage rooms and approvals, students reserve free slots, with a FastAPI + Agent layer in progress.',
+    tags: ['Vue 3', 'Element Plus', 'FastAPI', 'Agent'],
+    private: true,
   },
   {
-    name: 'Project Delta',
-    description: 'CLI tool for streamlining development workflows and environment setup.',
-    tags: ['Rust', 'CLI', 'Linux'],
-    href: '#',
+    name: 'AXLE — Spring Boot 4 Rewrite',
+    description:
+      'Contract-first rewrite of AXLE: Vue 3 frontend running fully on mocks, Spring Boot 4 + Redisson backend in progress, and docs/API.md as the single interface contract.',
+    tags: ['Vue 3', 'Spring Boot', 'Redisson', 'MySQL'],
+    private: true,
   },
 ];
 ---
@@ -30,41 +42,57 @@ const projects = [
 <section class="py-20 border-t border-border reveal">
   <h2 class="text-2xl font-semibold mb-6">Projects</h2>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    {projects.map((project) => (
-      <a
-        href={project.href}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="group block bg-bg-card border border-border rounded-lg p-6 hover:border-accent/30 hover:scale-[1.02] transition-all duration-200"
-      >
-        <div class="flex items-start justify-between">
-          <h3 class="font-semibold text-lg group-hover:text-accent transition-colors duration-200">
-            {project.name}
-          </h3>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="text-text-dim group-hover:text-accent transition-colors duration-200 mt-1 shrink-0"
-          >
-            <path d="M7 17L17 7" />
-            <path d="M7 7h10v10" />
-          </svg>
-        </div>
-        <p class="text-text-muted text-sm mt-2 leading-relaxed">
-          {project.description}
-        </p>
-        <div class="flex flex-wrap gap-2 mt-4">
-          {project.tags.map((tag) => (
-            <span class="text-xs text-text-dim">{tag}</span>
-          ))}
-        </div>
-      </a>
-    ))}
+    {projects.map((project) => {
+      const Tag = project.private ? 'div' : 'a';
+      const linkProps = project.private
+        ? {}
+        : { href: project.href, target: '_blank', rel: 'noopener noreferrer' };
+
+      return (
+        <Tag
+          {...linkProps}
+          class:list={[
+            'block bg-bg-card border border-border rounded-lg p-6 transition-all duration-200',
+            project.private
+              ? 'cursor-default'
+              : 'group hover:border-accent/30 hover:scale-[1.02]',
+          ]}
+        >
+          <div class="flex items-start justify-between gap-4">
+            <h3 class="font-semibold text-lg group-hover:text-accent transition-colors duration-200">
+              {project.name}
+            </h3>
+            {project.private ? (
+              <span class="text-[11px] uppercase tracking-wider text-text-dim border border-border rounded px-2 py-0.5 mt-0.5 shrink-0">
+                Private
+              </span>
+            ) : (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                class="text-text-dim group-hover:text-accent transition-colors duration-200 mt-1 shrink-0"
+              >
+                <path d="M7 17L17 7" />
+                <path d="M7 7h10v10" />
+              </svg>
+            )}
+          </div>
+          <p class="text-text-muted text-sm mt-2 leading-relaxed">
+            {project.description}
+          </p>
+          <div class="flex flex-wrap gap-2 mt-4">
+            {project.tags.map((tag) => (
+              <span class="text-xs text-text-dim">{tag}</span>
+            ))}
+          </div>
+        </Tag>
+      );
+    })}
   </div>
 </section>
