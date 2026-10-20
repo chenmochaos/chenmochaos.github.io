@@ -1,11 +1,17 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-13T08:36:56.597Z",
+  "generatedAt": "2026-10-20T02:51:12.838Z",
   "entries": {
     "agent-context-tool-harness": {
       "source": "STX/AI/Agent/Agent-Index.md",
       "output": "src/content/posts/agent-context-tool-harness.md",
       "outputHash": "sha256:07ac4993568ebeb72a56e9c4ec790f158b5e0b73f5286ba25ce50fdddac47fad",
+      "images": []
+    },
+    "mybatisplus-quickstart": {
+      "source": "STX/Code/Java/MyBatisPlus最快上手.md",
+      "output": "src/content/posts/mybatisplus-quickstart.md",
+      "outputHash": "sha256:56f1981a7853b9c633b042b37e4482eaf989525cf41871860f9f9ab7ad3afdf1",
       "images": []
     },
     "ollama-qwen-coder-continue-autocomplete": {
@@ -15,9 +21,9 @@
       "images": []
     },
     "redis-cache-strategies": {
-      "source": "STX/Code/Java/Redis缓存处理策略——基于商铺查询.md",
+      "source": "STX/Code/Java/Redis缓存处理策略 -- 基于车辆查询.md",
       "output": "src/content/posts/redis-cache-strategies.md",
-      "outputHash": "sha256:264e6c0c6a6c22ac88544ecb77d373cbcfb4b6aa4ba93ae60fab356a5624e75f",
+      "outputHash": "sha256:129eddb1a7fa1012e9f67f879e73931aa76edff4fb270b5c9fbb7eddec9c861f",
       "images": []
     }
   }
