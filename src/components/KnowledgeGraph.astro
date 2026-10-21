@@ -1,0 +1,209 @@
+---
+import { getCollection } from 'astro:content';
+import { buildGraph } from '../lib/graph-data.mjs';
+
+const posts = await getCollection('posts');
+const liveGraph = buildGraph(posts, { siteOrigin: Astro.site?.origin ?? '' });
+
+// 本地 demo 快照：只有 `pnpm graph:demo` 生成过、且处于 dev 时才存在。
+// .demo/ 在 .gitignore 里，生产构建读不到这些私有笔记。
+const demoModules = import.meta.env.DEV
+  ? import.meta.glob('../../.demo/graph-demo.json', { eager: true, import: 'default' })
+  : {};
+const demoGraph = Object.values(demoModules)[0];
+const useDemo = Boolean(demoGraph && Array.isArray(demoGraph.nodes) && demoGraph.nodes.length > 0);
+const graph = useDemo ? demoGraph : liveGraph;
+
+const graphJson = JSON.stringify(graph).replace(/</g, '\\u003c');
+const { stats } = graph;
+const unit = useDemo ? 'notes' : 'posts';
+// demo 的边里包含内容相似边，叫 connections 比 links 准确（不是真的内链）。
+const edgeWord = useDemo ? 'connections' : 'links';
+const statLine = `${stats.posts} ${unit} · ${stats.links} ${edgeWord} · ${stats.tags} tags`;
+const ariaLabel = useDemo
+  ? `Demo graph of ${stats.posts} notes from a local Obsidian vault, ${stats.links} connections and ${stats.tags} tags`
+  : `Interactive graph of ${stats.posts} posts, ${stats.links} internal links and ${stats.tags} tags`;
+---
+
+<section class="pt-10 pb-20 border-t border-border reveal" data-knowledge-graph>
+  <div class="mb-6 flex items-baseline justify-between gap-4" data-graph-header>
+    <h2 class="text-2xl font-semibold">Graph</h2>
+    <p class="shrink-0 text-xs text-text-dim tabular-nums sm:text-sm">{statLine}</p>
+  </div>
+
+  <div class="relative h-[clamp(400px,60vh,620px)] w-full" role="img" aria-label={ariaLabel}>
+    <div class="absolute inset-0" data-graph-canvas></div>
+    <p
+      class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-text-dim"
+      data-graph-fallback
+      hidden
+    ></p>
+    <noscript>
+      <p class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-text-dim">
+        The graph needs JavaScript. Browse the posts in the Writing section instead.
+      </p>
+    </noscript>
+  </div>
+
+  <p class="sr-only">{statLine}. Hover a node to highlight its neighbours, drag to rearrange, Ctrl/⌘ + scroll to zoom.</p>
+  <ul class="sr-only">
+    {graph.nodes.filter((node) => node.url).map((node) => (
+      <li><a href={node.url}>{node.label}</a></li>
+    ))}
+  </ul>
+
+  <script type="application/json" data-knowledge-graph-data set:html={graphJson}></script>
+</section>
+
+<style is:global>
+  /* 悬停聚焦时整页压暗，只留画布里的高亮子图。canvas 是透明的，页面内容透过它
+     一起变暗，节点与边保持原亮度，视觉上就像页面灯被关掉。
+     进入 435ms、退出 300ms（比进入短约 31%，离场更利落）；缓动曲线与 JS 的
+     smoothstep 等价，页面和画布同起同落。CSS 的过渡时长取「变化后」的样式，
+     所以进入用 .graph-focus 规则里的 435ms，退出回到基础规则的 300ms。
+     `.reveal` 的 transition 特异性更高，必须一并覆盖，否则各区块会按自己的 0.5s 走。 */
+  main > *,
+  main > .reveal {
+    transition:
+      opacity 300ms cubic-bezier(0.3333, 0, 0.6667, 1),
+      transform 0.5s ease;
+  }
+
+  body.graph-focus main > :not([data-knowledge-graph]) {
+    opacity: 0.16;
+    transition:
+      opacity 435ms cubic-bezier(0.3333, 0, 0.6667, 1),
+      transform 0.5s ease;
+  }
+
+  [data-graph-header] {
+    transition: opacity 300ms cubic-bezier(0.3333, 0, 0.6667, 1);
+  }
+
+  body.graph-focus [data-graph-header] {
+    opacity: 0.25;
+    transition: opacity 435ms cubic-bezier(0.3333, 0, 0.6667, 1);
+  }
+</style>
+
+<script>
+  import { createGraphView } from '../lib/graph-view.js';
+
+  const observed = new WeakSet();
+  let generation = 0;
+  let activeCleanup = null;
+
+  function readColors(element) {
+    const style = getComputedStyle(element);
+    const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+    return {
+      border: read('--color-border', '#262626'),
+      text: read('--color-text', '#fafafa'),
+      textMuted: read('--color-text-muted', '#a1a1a1'),
+      textDim: read('--color-text-dim', '#6b6b6b'),
+      accent: read('--color-accent', '#e5e5e5'),
+    };
+  }
+
+  function supportsWebGL2() {
+    try {
+      return Boolean(document.createElement('canvas').getContext('webgl2'));
+    } catch {
+      return false;
+    }
+  }
+
+  function showFallback(section, message) {
+    const fallback = section.querySelector('[data-graph-fallback]');
+    const canvas = section.querySelector('[data-graph-canvas]');
+    if (canvas) canvas.hidden = true;
+    if (!fallback) return;
+    fallback.textContent = message;
+    fallback.hidden = false;
+  }
+
+  async function init(section) {
+    if (section.dataset.graphInitialized === 'true') return;
+    section.dataset.graphInitialized = 'true';
+
+    const token = ++generation;
+    const host = section.querySelector('[data-graph-canvas]');
+    const dataElement = section.querySelector('script[data-knowledge-graph-data]');
+    if (!host || !dataElement) return;
+
+    let data;
+    try {
+      data = JSON.parse(dataElement.textContent || '{}');
+    } catch {
+      showFallback(section, 'Graph data could not be read.');
+      return;
+    }
+
+    if (!Array.isArray(data.nodes) || data.nodes.length === 0) {
+      showFallback(section, 'No posts to graph yet.');
+      return;
+    }
+
+    if (!supportsWebGL2()) {
+      showFallback(section, 'This graph needs WebGL2. Browse the posts in the Writing section instead.');
+      return;
+    }
+
+    try {
+      const view = await createGraphView({ host, data, colors: readColors(section) });
+      if (token !== generation) {
+        view.destroy();
+        return;
+      }
+
+      // 开发期调试入口；生产构建会被 tree-shake 掉。
+      if (import.meta.env.DEV) {
+        window.__knowledgeGraph = { ...view, createdAt: Date.now() };
+      }
+
+      activeCleanup = () => view.destroy();
+    } catch (error) {
+      console.error('[knowledge-graph]', error);
+      showFallback(section, 'The graph failed to load. Browse the posts in the Writing section instead.');
+    }
+  }
+
+  function boot() {
+    document.querySelectorAll('[data-knowledge-graph]').forEach((section) => {
+      if (observed.has(section) || section.dataset.graphInitialized === 'true') return;
+      observed.add(section);
+
+      if (!('IntersectionObserver' in window)) {
+        void init(section);
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        (entries, current) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          current.disconnect();
+          void init(section);
+        },
+        { rootMargin: '240px 0px' }
+      );
+      observer.observe(section);
+    });
+  }
+
+  function teardown() {
+    generation += 1;
+    if (activeCleanup) {
+      activeCleanup();
+      activeCleanup = null;
+    }
+    if (import.meta.env.DEV) delete window.__knowledgeGraph;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('astro:page-load', boot);
+  } else {
+    boot();
+    document.addEventListener('astro:page-load', boot);
+  }
+  document.addEventListener('astro:before-swap', teardown);
+</script>

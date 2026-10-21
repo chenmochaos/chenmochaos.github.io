@@ -6,6 +6,7 @@ Minus 的个人博客网站，集个人名片与文章发布于一体。黑色�
 ## Tech Stack
 - **Framework**: Astro v6 + MDX
 - **Styling**: Tailwind CSS v4 (CSS-first config, 无 tailwind.config.mjs)
+- **Knowledge Graph**: Sigma.js + Graphology + d3-force (Obsidian-style forces/drag; 唯一允许的客户端 JS，懒加载)
 - **Animation**: CSS native transitions only (no JS animation libraries)
 - **Deploy**: GitHub Pages (via GitHub Actions, static) — https://chenmochaos.github.io/
 - **Package Manager**: pnpm
@@ -22,6 +23,7 @@ Blog/
 │   │   ├── About.astro           # Background, skills, current focus
 │   │   ├── Projects.astro        # Project cards grid
 │   │   ├── PostList.astro        # Article list with title/date/excerpt
+│   │   ├── KnowledgeGraph.astro  # Obsidian-style graph: posts + tags + internal links
 │   │   ├── TableOfContents.astro # Article outline, right rail at xl+ (h2/h3, scroll-spy)
 │   │   ├── Footer.astro          # Contact info + links
 │   │   └── SocialLinks.astro     # Reusable social icon links
@@ -32,8 +34,11 @@ Blog/
 │   ├── content/
 │   │   └── posts/                # MDX article files
 │   │       └── hello-world.mdx   # Example post
-│   └── styles/
-│       └── global.css            # Tailwind directives + custom base styles
+│   ├── styles/
+│   │   └── global.css            # Tailwind directives + custom base styles
+│   ├── lib/
+│   │   ├── graph-data.mjs        # Pure builder: posts/tags/links → graph JSON
+│   │   └── graph-view.js         # Browser view: sigma + d3-force, Obsidian-style feel
 ├── public/
 │   └── fonts/                    # Self-hosted fonts if needed
 ├── .github/
@@ -133,10 +138,40 @@ pnpm sync --dry    # 只预览，不写盘
 - 生成物清单在 `.sync-manifest.json`，只有清单内的文件会被同步删除
 - 脚本不执行 git 命令，commit 与 push 始终手动
 
+## 知识图谱
+
+`src/components/KnowledgeGraph.astro` 位于首页 Hero 与 About 之间，数据由 `src/lib/graph-data.mjs` 在构建时生成，渲染逻辑在 `src/lib/graph-view.js`：
+
+- 节点：已发布文章 + 它们的标签；未发布笔记不进图
+- 边：正文里指向 `/posts/<id>` 的内链 + 文章→标签
+- 力模拟用 d3-force 复刻 Obsidian graph 的默认参数（链接距离 250、电荷 -120、中心引力 0.12），拖拽时钉住节点、松手释放并自然冷却
+- 节点多（>90）时自动换一套密度参数：节点更小（4–12px）、链接距离 320、电荷 -320；布局阶段额外跑 `forceCollide`（按画布比例把屏幕半径换算回 graph 坐标，分三轮收敛并留 20% 间隙），保证初始视图和放大后节点都不重叠
+- 标签在节点下方，屏幕空间做碰撞剔除；全景（`zoomFactor < 1.18`）下隐藏全部标签，放大后才显示；全景悬停时只显示鼠标所在节点的名字，放大后标签保持显示、不因悬停消失
+- 悬停节点后平滑聚焦：进入 435ms、退出 300ms（退出比进入短约 31%），悬停节点与其边最亮，邻居节点保留 78% 亮度，其余节点和边几乎隐入背景；同时给 `body` 加 `graph-focus`，由 `KnowledgeGraph.astro` 的全局 CSS 把页面上其余区块压暗到 0.16、Graph 标题压到 0.25。页面压暗与画布高亮使用同一时长（进入 435ms / 退出 300ms）和同一条 S 曲线，两边同步到位。页面滚动、指针离开画布或点空白处都会收回聚焦
+- 点击节点可钉住聚焦，再点一次或点空白处取消；双击空白处回到初始取景
+- 滚轮默认滚页面，**Ctrl/⌘ + 滚轮**才缩放图谱（sigma `gestureTarget: 'shared'`）；触屏设备用双指缩放
+- 打开时按文章创建时间（`created`）依次弹出节点（约 3s），期间模拟保留少量 alpha，让节点继续被斥力轻推收敛；`prefers-reduced-motion` 下直接全显
+- sigma / graphology / d3-force 在 section 进入视口后才动态 import；这是全站唯一允许的客户端 JS
+- 颜色从 `getComputedStyle` 读 `--color-*` token，不在 JS 里写死 hex
+- 图的密度取决于标签复用与文章互链，一次性标签只会长成叶子
+
+### 本地 demo 数据
+
+文章数少时，图谱会显得稀疏。用 vault 生成一份 demo 快照，只在 `pnpm dev` 下生效：
+
+```bash
+pnpm graph:demo          # 生成 .demo/graph-demo.json
+pnpm graph:demo --dry    # 只打印统计
+```
+
+demo 会用上 vault 里的全部笔记（不再过滤孤立笔记），并额外生成内容相似边（TF-IDF 余弦，每篇取最近 10 篇、至少 2 篇），把只有标签没有互链的笔记也连成网状。每篇笔记带 `created` 时间戳（frontmatter 的 `created`/`date`/`pubDate`，缺省用文件创建时间），供打开动画排序。
+
+`.demo/` 在 `.gitignore` 里，demo 数据只通过 `import.meta.env.DEV` 分支读取，不进 commit、不进生产构建。删掉 `.demo/` 即自动回到真实文章数据。
+
 ## Rules
 - No JS animation libraries — CSS transitions and Astro View Transitions only
 - No component libraries (shadcn, etc.) — all components are hand-crafted
-- Keep bundle size minimal: zero client-side JS by default, use `client:*` directives only when necessary
+- Keep bundle size minimal: zero client-side JS by default. The knowledge graph is the only exception; it must stay lazily loaded
 - Images must have explicit width/height or use Astro's `<Image>` component
 - All colors from the design system, no hardcoded hex values outside Tailwind config
 - Responsive: mobile-first; `md` (768px) for layout, `xl` (1280px) for the article outline rail

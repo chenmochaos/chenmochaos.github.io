@@ -2,3 +2,6 @@ node_modules/
 dist/
 .vercel/
 .astro/
+
+# 本地知识图谱 demo 快照（来自私有 vault，绝不提交）
+.demo/
