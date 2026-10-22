@@ -59,6 +59,16 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
       document.addEventListener('astro:after-swap', () => {
         document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
       });
+
+      // 浏览量统计。打包出来的 module 脚本在 ClientRouter 导航时不会重新执行，所以
+      // 驱动放在这里（只跑一次）而不是 ViewCounter 自己的 <script> 里；只在当前页确实
+      // 有占位元素时才动态 import，首页不下载这段代码。失败只 warn，页面不受影响。
+      document.addEventListener('astro:page-load', () => {
+        if (!document.querySelector('[data-view-counter]')) return;
+        import('../lib/views-view.js')
+          .then(({ renderCounters }) => renderCounters())
+          .catch((err) => console.warn('[views] 浏览量获取失败：', err));
+      });
     </script>
   </body>
 </html>

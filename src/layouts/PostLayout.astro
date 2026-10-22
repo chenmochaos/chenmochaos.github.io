@@ -1,8 +1,11 @@
 ---
 import BaseLayout from './BaseLayout.astro';
 import TableOfContents from '../components/TableOfContents.astro';
+import ViewCounter from '../components/ViewCounter.astro';
 
 interface Props {
+  /** 文章 id，同时是 URL 与浏览量统计的键 */
+  slug: string;
   title: string;
   description?: string;
   pubDate: Date;
@@ -11,7 +14,7 @@ interface Props {
   headings: { depth: number; slug: string; text: string }[];
 }
 
-const { title, description, pubDate, updatedAt, tags, headings } = Astro.props;
+const { slug, title, description, pubDate, updatedAt, tags, headings } = Astro.props;
 
 // 同一天不显示「Updated」：刚发出来就挂上一行更新日期是噪音。
 const sameDay = (a: Date, b: Date) =>
@@ -43,7 +46,7 @@ const updatedAtLabel =
           Back
         </a>
         <h1 class="text-4xl md:text-5xl font-bold tracking-tight">{title}</h1>
-        <div class="flex items-center gap-4 mt-4">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-4">
           <time datetime={pubDate.toISOString()} class="text-text-dim text-sm">
             {pubDate.toLocaleDateString('en-US', {
               year: 'numeric',
@@ -56,16 +59,17 @@ const updatedAtLabel =
               Updated {updatedAtLabel}
             </time>
           )}
-          {tags && tags.length > 0 && (
-            <div class="flex gap-2">
-              {tags.map((tag) => (
-                <span class="text-xs text-text-dim bg-bg-card border border-border px-2 py-0.5 rounded-full">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
+          <ViewCounter slug={slug} />
         </div>
+        {tags && tags.length > 0 && (
+          <div class="flex flex-wrap gap-2 mt-3">
+            {tags.map((tag) => (
+              <span class="text-xs text-text-dim bg-bg-card border border-border px-2 py-0.5 rounded-full">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
       </header>
 
       <div class="prose-custom">

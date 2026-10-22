@@ -6,7 +6,8 @@ Minus 的个人博客网站，集个人名片与文章发布于一体。黑色�
 ## Tech Stack
 - **Framework**: Astro v6 + MDX
 - **Styling**: Tailwind CSS v4 (CSS-first config, 无 tailwind.config.mjs)
-- **Knowledge Graph**: Sigma.js + Graphology + d3-force (Obsidian-style forces/drag; 唯一允许的客户端 JS，懒加载)
+- **Knowledge Graph**: Sigma.js + Graphology + d3-force (Obsidian-style forces/drag; 懒加载)
+- **View Counter**: Supabase (Postgres + RPC)，文章页一次 fetch，~1KB，只在文章详情页动态 import
 - **Animation**: CSS native transitions only (no JS animation libraries)
 - **Deploy**: GitHub Pages (via GitHub Actions, static) — https://chenmochaos.github.io/
 - **Package Manager**: pnpm
@@ -25,6 +26,7 @@ Blog/
 │   │   ├── PostList.astro        # Article list with title/date/excerpt
 │   │   ├── KnowledgeGraph.astro  # Obsidian-style graph: posts + tags + internal links
 │   │   ├── TableOfContents.astro # Article outline, right rail at xl+ (h2/h3, scroll-spy)
+│   │   ├── ViewCounter.astro     # 文章浏览量占位（数字由客户端填）
 │   │   ├── Footer.astro          # Contact info + links
 │   │   └── SocialLinks.astro     # Reusable social icon links
 │   ├── pages/
@@ -38,7 +40,10 @@ Blog/
 │   │   └── global.css            # Tailwind directives + custom base styles
 │   ├── lib/
 │   │   ├── graph-data.mjs        # Pure builder: posts/tags/links → graph JSON
-│   │   └── graph-view.js         # Browser view: sigma + d3-force, Obsidian-style feel
+│   │   ├── graph-view.js         # Browser view: sigma + d3-force, Obsidian-style feel
+│   │   ├── views-core.mjs        # Pure: slug 校验 / URL / 解析 / 格式化 / 会话去重
+│   │   ├── views-view.js         # Browser: 一次 fetch，失败静默
+│   │   └── supabase-config.mjs   # SUPABASE_URL + SUPABASE_ANON_KEY（公开常量）
 ├── public/
 │   └── fonts/                    # Self-hosted fonts if needed
 ├── .github/
@@ -168,10 +173,24 @@ demo 会用上 vault 里的全部笔记（不再过滤孤立笔记），并额�
 
 `.demo/` 在 `.gitignore` 里，demo 数据只通过 `import.meta.env.DEV` 分支读取，不进 commit、不进生产构建。删掉 `.demo/` 即自动回到真实文章数据。
 
+## 浏览量统计
+
+文章详情页 header 的 meta 行显示该文章的累计浏览量（PV）。静态站没有可写后端，计数落在 Supabase。
+
+- 展示：`PostLayout.astro` 的 meta 行，顺序 日期 → Updated → 浏览量（eye 图标 + 数字）→ 标签。首页列表**不显示**，保持干净
+- 口径：每个浏览器会话每篇计一次（`sessionStorage` 的 `viewed:<slug>` 去重），刷新不涨，新标签页算一次；隐私模式下 storage 抛错则降级为每次计数
+- 请求：本会话没计过 → `POST /rest/v1/rpc/increment_view`（自增并返回新值）；计过 → `GET /rest/v1/post_views?slug=eq.<slug>&select=views`（只读当前值）
+- 驱动：`BaseLayout.astro` 的 `astro:page-load` 监听器 + 动态 `import()`。**不要**把脚本挂在 `ViewCounter` 自己的 `<script>` 上 —— ClientRouter 下打包出来的 module 脚本只在首次页面加载执行一次，从首页点进文章页那段脚本根本不会跑
+- 失败：网络 / RLS / 项目被暂停 / 解析不出数字 → 数字保持隐藏，只 `console.warn` 一条。不显示 `0` 冒充有数据
+- 布局：占位常驻且 `min-width: 4.5rem`，数字到达只把 `visibility` 打开，页头不换行、不抖动
+- 配置：`src/lib/supabase-config.mjs` 的 `SUPABASE_URL` / `SUPABASE_ANON_KEY`。anon key 是设计上公开的（安全性来自 RLS，不是保密），所以直接进仓库；换项目改这个文件
+- 数据表：`post_views(slug pk, views, updated_at)`。RLS 只给 anon `SELECT`，没有写策略；唯一写入口是 `security definer` 的 `increment_view(p_slug)`。项目建库时关闭了「自动暴露新表」，所以建表 SQL 里显式 `grant select on public.post_views to anon` —— 关掉那个开关后如果忘了这一步，REST 会返回 401/42501。建表 SQL 见 `docs/superpowers/specs/2026-10-22-view-counter-design.md`
+- 已知代价：Supabase 免费项目 7 天低活跃会被暂停，暂停期间数字全部隐藏；纯前端挡不住刷量（拿到 anon key 就能 curl）
+
 ## Rules
 - No JS animation libraries — CSS transitions and Astro View Transitions only
 - No component libraries (shadcn, etc.) — all components are hand-crafted
-- Keep bundle size minimal: zero client-side JS by default. The knowledge graph is the only exception; it must stay lazily loaded
+- Keep bundle size minimal: zero client-side JS by default. Two exceptions, both lazily loaded: the knowledge graph, and the view counter (post pages only, ~1KB)
 - Images must have explicit width/height or use Astro's `<Image>` component
 - All colors from the design system, no hardcoded hex values outside Tailwind config
 - Responsive: mobile-first; `md` (768px) for layout, `xl` (1280px) for the article outline rail

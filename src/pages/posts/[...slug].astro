@@ -17,6 +17,7 @@ const { Content, headings } = await render(post);
 ---
 
 <PostLayout
+  slug={post.id}
   title={post.data.title}
   description={post.data.description}
   pubDate={post.data.pubDate}
