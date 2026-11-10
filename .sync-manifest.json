@@ -1,17 +1,23 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-20T02:51:12.838Z",
+  "generatedAt": "2026-11-10T05:43:11.948Z",
   "entries": {
     "agent-context-tool-harness": {
       "source": "STX/AI/Agent/Agent-Index.md",
       "output": "src/content/posts/agent-context-tool-harness.md",
-      "outputHash": "sha256:07ac4993568ebeb72a56e9c4ec790f158b5e0b73f5286ba25ce50fdddac47fad",
+      "outputHash": "sha256:794025243ad3ff7c94dfc74bc2f09e4258181f0ad7f91303d28ba50f704f870c",
       "images": []
     },
-    "mybatisplus-quickstart": {
-      "source": "STX/Code/Java/MyBatisPlus最快上手.md",
-      "output": "src/content/posts/mybatisplus-quickstart.md",
-      "outputHash": "sha256:56f1981a7853b9c633b042b37e4482eaf989525cf41871860f9f9ab7ad3afdf1",
+    "can-we-write-code": {
+      "source": "STX/散文/人类 还能不能写出优美的代码.md",
+      "output": "src/content/posts/can-we-write-code.md",
+      "outputHash": "sha256:aa910f6ffa7b8cf8c6a766521201340c3431e0c48ba34662f45a75e7d9687c64",
+      "images": []
+    },
+    "login-double-interceptor": {
+      "source": "STX/Code/Java/Login登录功能设计.md",
+      "output": "src/content/posts/login-double-interceptor.md",
+      "outputHash": "sha256:a5234f4475d10b48b74946ab958591c3682616567bcd1e9c8e937467b4ad475b",
       "images": []
     },
     "ollama-qwen-coder-continue-autocomplete": {
@@ -23,7 +29,7 @@
     "redis-cache-strategies": {
       "source": "STX/Code/Java/Redis缓存处理策略 -- 基于车辆查询.md",
       "output": "src/content/posts/redis-cache-strategies.md",
-      "outputHash": "sha256:129eddb1a7fa1012e9f67f879e73931aa76edff4fb270b5c9fbb7eddec9c861f",
+      "outputHash": "sha256:a915d79d9c5d9d58a948c7bcbdf2dfc04d6ef122b84a42576022129ee11ec803",
       "images": []
     }
   }

@@ -3,18 +3,46 @@ title: "Agent-Index: 对Agent基础定义的理解"
 slug: "agent-context-tool-harness"
 description: "从 Tool 与 Context 两个角度拆解 Agent 的构成，顺带聊聊 Freeform Tool Calling 与模型吞噬 Harness，并对照 Claude Code 看这套抽象如何落地。"
 pubDate: 2026-10-11
-updatedAt: 2026-10-13
+updatedAt: 2026-10-20
 tags: ["agent", "llm", "context", "claude-code"]
 draft: false
 syncedFrom: "STX/AI/Agent/Agent-Index.md"
 ---
+
+## What is Agent?
 
 Agent的两个定义, 二者并不独立, 而是从Agent内部不同角度的观察:
 
 **Agent = LLM + Context + Tool**
 **Agent = Model + Harness**
 
+## Context
+
+**上下文：决定 Agent 能力上限的关键**
+
+LLM是无记忆无状态的, 本质上就是一个猜词机. 你给他一句话, 他预测出接下来的回答.
+
+那么上下文对于Agent来说非常重要, 我们需要给LLM良好的背景信息, 如果信息不足, Agent自然无法给我们想要的结果.
+
+> Q: 那么我们需要告诉LLM些什么?
+
+**Agent 的上下文 = 静态前缀(System Prompt, Tool Definitions) + 轨迹(User Message, Assistant Message, Tool Results)**。
+
+每次调用 LLM 时的上下文由以下五个部分构成：
+
+- **系统提示词**（System Prompt）：与用户每次输入的提示词不同，系统提示词由开发者编写，在整个对话过程中保持不变，相当于 Agent 的“岗位说明书”——定义它的身份、权限和行为准则。通过提示工程（Prompt Engineering）精心设计系统提示词，我们可以塑造 Agent 的工作方式。系统提示词中还会包含跨会话保存的**用户记忆**（用户偏好、历史行为、背景设定等个性化信息，详见第三章）和动态注入的环境状态。
+- **工具定义**（Tool Definitions）：声明 Agent 可用工具的名称、功能描述和参数格式。没有工具定义，Agent 就无法识别和调用任何工具，但它并不会因此停下来——消融实验（实验 1-1）会说明这一点。工具定义与系统提示词一起构成对话中保持不变的**静态前缀**（这是基础模式；2026 年以来，生产框架中工具的完整 schema 也可以按需动态加载到上下文末尾而不破坏前缀，详见第二章工具定义一节和第四章）。
+- **用户消息**（User Messages）：来自用户的输入。用户消息中还可能包含通过 RAG（检索增强生成，Retrieval-Augmented Generation，详见第三章）动态检索引入的**外部知识**——覆盖训练数据截止后的信息或私有领域知识。
+- **模型回复**（Assistant Messages）：模型之前生成的回复，最多包含三个部分——思考过程（`reasoning`，即内部思考链，用于保持思维的连贯性和决策的可解释性）、文本内容（`content`，即对用户的回复）和工具调用请求（`tool_calls`，即 Agent 采取行动的方式）。在一次具体的回复中，三者不一定同时出现：例如 Agent 决定调用工具时通常只有 `reasoning` + `tool_calls`，给出最终回答时通常只有 `reasoning` + `content`。
+- **工具执行结果**（Tool Results）：Agent 框架执行工具后返回的结果。这些结果是 Agent 下一步思考的直接依据，也让它能够从执行结果中学习、避免重复犯错。
+
+前两项（系统提示词 + 工具定义）是静态前缀，后三项（用户消息 + 模型回复 + 工具执行结果）是随交互不断增长的动态消息历史。这五个部分共同构成了 LLM 每次推理时的上下文。
+
 ## Tool(Function Calling&Tool Calling)
+
+LLM只拥有Context依旧不够, 还需要配上一些手脚, 也就是给他一些工具, 让模型能来进行使用.
+
+> LLM如何使用工具?
 
 工具调用四步:
 - 在上下文里告诉模型有哪些工具可用（包括名称、用途和参数）
@@ -27,27 +55,6 @@ Agent的两个定义, 二者并不独立, 而是从Agent内部不同角度的观
 我之前一直以为Function Call就是通过严格的json来让Agent使用工具, 但是学习过程中了解到GPT5.6已经可以使用Freeform Tool Calling来调用工具. 
 
 感觉这也是模型吞噬Harness的一种体现, 开发者将环境提供给大模型, 大模型能够更流畅的表达. Harnesss的职责重新分配, LLM与Harness一直在互相动态的匹配调整.
-
-## Context
-
-**Agent 的上下文 = 静态前缀(System Prompt, Tool Definitions) + 轨迹(User Message, Assistant Message, Tool Results)**。
-
-
-每次调用 LLM 时的上下文由以下五个部分构成：
-
-- **系统提示词**（System Prompt）：与用户每次输入的提示词不同，系统提示词由开发者编写，在整个对话过程中保持不变，相当于 Agent 的“岗位说明书”——定义它的身份、权限和行为准则。通过提示工程（Prompt Engineering）精心设计系统提示词，我们可以塑造 Agent 的工作方式。系统提示词中还会包含跨会话保存的**用户记忆**（用户偏好、历史行为、背景设定等个性化信息，详见第三章）和动态注入的环境状态。
-- **工具定义**（Tool Definitions）：声明 Agent 可用工具的名称、功能描述和参数格式。没有工具定义，Agent 就无法识别和调用任何工具，但它并不会因此停下来——消融实验（实验 1-1）会说明这一点。工具定义与系统提示词一起构成对话中保持不变的**静态前缀**（这是基础模式；2026 年以来，生产框架中工具的完整 schema 也可以按需动态加载到上下文末尾而不破坏前缀，详见第二章工具定义一节和第四章）。
-- **用户消息**（User Messages）：来自用户的输入。用户消息中还可能包含通过 RAG（检索增强生成，Retrieval-Augmented Generation，详见第三章）动态检索引入的**外部知识**——覆盖训练数据截止后的信息或私有领域知识。
-- **模型回复**（Assistant Messages）：模型之前生成的回复，最多包含三个部分——思考过程（`reasoning`，即内部思考链，用于保持思维的连贯性和决策的可解释性）、文本内容（`content`，即对用户的回复）和工具调用请求（`tool_calls`，即 Agent 采取行动的方式）。在一次具体的回复中，三者不一定同时出现：例如 Agent 决定调用工具时通常只有 `reasoning` + `tool_calls`，给出最终回答时通常只有 `reasoning` + `content`。
-- **工具执行结果**（Tool Results）：Agent 框架执行工具后返回的结果。这些结果是 Agent 下一步思考的直接依据，也让它能够从执行结果中学习、避免重复犯错。
-
-前两项（系统提示词 + 工具定义）是静态前缀，后三项（用户消息 + 模型回复 + 工具执行结果）是随交互不断增长的动态消息历史。这五个部分共同构成了 LLM 每次推理时的上下文。
-
-## 对Claude Code的分析
-
-- LLM:  我通过CCSwitch改为Deepseek接入, 毕竟穷学生用不起贵模型. 
-- Context: 根目录以及子目录下的CLAUDE.md, 我装了Claude-mem插件可以加上跨会话记忆, User Message以及项目内文件等等
-- Tools: 除模型原生的读写Coding, 运行指令外, 我还加装了一些Skill, 给Agent加上一些更丰富的功能比如联网查询等等
 
 ## 学习资源
 
