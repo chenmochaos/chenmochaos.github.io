@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-10T05:43:11.948Z",
+  "generatedAt": "2026-11-15T14:19:00.752Z",
   "entries": {
     "agent-context-tool-harness": {
       "source": "STX/AI/Agent/Agent-Index.md",
@@ -11,7 +11,7 @@
     "can-we-write-code": {
       "source": "STX/散文/人类 还能不能写出优美的代码.md",
       "output": "src/content/posts/can-we-write-code.md",
-      "outputHash": "sha256:aa910f6ffa7b8cf8c6a766521201340c3431e0c48ba34662f45a75e7d9687c64",
+      "outputHash": "sha256:7f43dc21a4addc41e290e1c98a401231a366d952c05faf73f28cdcc3b92af950",
       "images": []
     },
     "login-double-interceptor": {
